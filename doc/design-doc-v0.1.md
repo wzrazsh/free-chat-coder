@@ -334,9 +334,9 @@ sequenceDiagram
 *   [x] 端到端测试：控制台提交任务 -> 扩展执行 -> 结果返回控制台。
 
 ### 迭代 2：编辑器与进化基础 (2天)
-*   [ ] 集成 Monaco Editor 到控制台。
-*   [ ] 实现 `/evolve` API 和热重载机制。
-*   [ ] 验证修改 `custom-handler.js` 后系统行为变化。
+*   [x] 集成 Monaco Editor 到控制台。
+*   [x] 实现 `/evolve` API 和热重载机制。
+*   [x] 验证修改 `custom-handler.js` 后系统行为变化。
 
 ### 迭代 3：健壮性与体验优化 (后续)
 *   [ ] 添加任务持久化（本地 JSON 文件）。

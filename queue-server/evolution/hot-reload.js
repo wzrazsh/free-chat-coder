@@ -1,34 +1,44 @@
-// /workspace/queue-server/evolution/hot-reload.js
 const express = require('express');
 const router = express.Router();
 const fs = require('fs');
 const path = require('path');
 
-const CUSTOM_HANDLER_PATH = path.join(__dirname, '..', 'custom-handler.js');
+const handlerPath = path.join(__dirname, '..', 'custom-handler.js');
 
-// Save new code and trigger reload
+// Get current custom handler code
+router.get('/', (req, res) => {
+  try {
+    const code = fs.readFileSync(handlerPath, 'utf8');
+    res.json({ code });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to read custom-handler.js' });
+  }
+});
+
+// Update custom handler code and trigger restart
 router.post('/', (req, res) => {
   const { code } = req.body;
+  
   if (!code) {
-    return res.status(400).json({ error: 'Code string is required' });
+    return res.status(400).json({ error: 'Code is required' });
   }
 
   try {
-    fs.writeFileSync(CUSTOM_HANDLER_PATH, code, 'utf8');
-    console.log('[Evolve] New custom handler saved.');
+    // Write new code to file
+    fs.writeFileSync(handlerPath, code, 'utf8');
     
-    // Return response before exiting to avoid request timeout
-    res.json({ message: 'Evolution applied successfully. Server restarting...' });
-
-    // Give express a moment to send the response before exit
+    // Send response before exiting
+    res.json({ message: 'Code updated. Server is restarting...' });
+    
+    // Trigger nodemon restart by exiting the process
+    console.log('[Evolve] New code received. Restarting server...');
     setTimeout(() => {
-      console.log('[Evolve] Triggering nodemon restart...');
       process.exit(0);
     }, 500);
-
+    
   } catch (err) {
-    console.error('[Evolve] Failed to write new code:', err);
-    res.status(500).json({ error: 'Failed to write code' });
+    console.error('[Evolve] Error saving code:', err);
+    res.status(500).json({ error: 'Failed to write custom-handler.js' });
   }
 });
 
