@@ -27,8 +27,8 @@ function connect() {
         if (msg.type === 'pong') return;
         
         if (msg.type === 'reload_extension') {
-          console.log('[Offscreen] Received reload command from server, reloading extension...');
-          chrome.runtime.reload();
+          console.log('[Offscreen] Received reload command from server, passing to background...');
+          chrome.runtime.sendMessage({ type: 'reload_extension' });
           return;
         }
 

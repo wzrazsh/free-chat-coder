@@ -26,6 +26,9 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg.type === 'task_assigned') {
     console.log('[SW] Task assigned:', msg.task);
     executeDeepSeekTask(msg.task);
+  } else if (msg.type === 'reload_extension') {
+    console.log('[SW] Reloading extension by server request...');
+    chrome.runtime.reload();
   }
 });
 
