@@ -22,20 +22,26 @@ function connect() {
   };
   
   ws.onmessage = (event) => {
-    try {
-      const msg = JSON.parse(event.data);
-      if (msg.type === 'pong') return;
-      
-      console.log('[Offscreen] Received message from server:', msg);
-      
-      // Forward task_assigned to Service Worker
-      if (msg.type === 'task_assigned') {
-        chrome.runtime.sendMessage(msg);
+      try {
+        const msg = JSON.parse(event.data);
+        if (msg.type === 'pong') return;
+        
+        if (msg.type === 'reload_extension') {
+          console.log('[Offscreen] Received reload command from server, reloading extension...');
+          chrome.runtime.reload();
+          return;
+        }
+
+        console.log('[Offscreen] Received message from server:', msg);
+        
+        // Forward task_assigned to Service Worker
+        if (msg.type === 'task_assigned') {
+          chrome.runtime.sendMessage(msg);
+        }
+      } catch (e) {
+        console.error('[Offscreen] Error parsing ws message:', e);
       }
-    } catch (e) {
-      console.error('[Offscreen] Error parsing ws message:', e);
-    }
-  };
+    };
   
   ws.onclose = () => {
     console.log('[Offscreen] WS connection closed, reconnecting in 5s...');

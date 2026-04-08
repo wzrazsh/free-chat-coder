@@ -1,8 +1,47 @@
 // /workspace/queue-server/queue/manager.js
+const fs = require('fs');
+const path = require('path');
+
 class QueueManager {
   constructor() {
     this.tasks = new Map(); // id -> task details
     this.pendingQueue = []; // array of task ids
+    this.dataPath = path.join(__dirname, '..', 'data', 'tasks.json');
+    this._initDataDirectory();
+    this._loadTasks();
+  }
+
+  _initDataDirectory() {
+    const dir = path.dirname(this.dataPath);
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
+    }
+  }
+
+  _loadTasks() {
+    try {
+      if (fs.existsSync(this.dataPath)) {
+        const data = fs.readFileSync(this.dataPath, 'utf8');
+        const tasksArray = JSON.parse(data);
+        tasksArray.forEach(task => {
+          this.tasks.set(task.id, task);
+          if (task.status === 'pending') {
+            this.pendingQueue.push(task.id);
+          }
+        });
+      }
+    } catch (err) {
+      console.error('[QueueManager] Error loading tasks:', err);
+    }
+  }
+
+  _saveTasks() {
+    try {
+      const tasksArray = Array.from(this.tasks.values());
+      fs.writeFileSync(this.dataPath, JSON.stringify(tasksArray, null, 2), 'utf8');
+    } catch (err) {
+      console.error('[QueueManager] Error saving tasks:', err);
+    }
   }
 
   addTask(prompt, options = {}) {
@@ -18,6 +57,7 @@ class QueueManager {
     
     this.tasks.set(id, task);
     this.pendingQueue.push(id);
+    this._saveTasks();
     return task;
   }
 
@@ -32,6 +72,7 @@ class QueueManager {
       updatedAt: new Date().toISOString()
     };
     this.tasks.set(id, updatedTask);
+    this._saveTasks();
     return updatedTask;
   }
 

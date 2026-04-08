@@ -2,6 +2,41 @@
 
 console.log('[Content Script] Injected on DeepSeek page.');
 
+function randomInt(min, max) {
+  return Math.floor(Math.random() * (max - min + 1)) + min;
+}
+
+function delay(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+async function simulateTyping(input, text) {
+  input.focus();
+  input.value = '';
+  
+  // Add initial random delay before typing
+  await delay(randomInt(200, 600));
+
+  let currentIndex = 0;
+  while (currentIndex < text.length) {
+    // Type a chunk of 3 to 15 characters
+    const chunkSize = randomInt(3, 15);
+    const chunk = text.substring(currentIndex, currentIndex + chunkSize);
+    
+    input.value += chunk;
+    input.dispatchEvent(new Event('input', { bubbles: true, cancelable: true }));
+    
+    currentIndex += chunkSize;
+    
+    // Add random delay between chunks
+    await delay(randomInt(30, 120));
+  }
+  
+  input.dispatchEvent(new Event('change', { bubbles: true, cancelable: true }));
+  // Add random delay after typing finishes
+  await delay(randomInt(300, 800));
+}
+
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg.action === 'submitPrompt') {
     const prompt = msg.prompt;
@@ -12,49 +47,53 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     const input = document.querySelector('textarea') || document.querySelector('#chat-input');
     
     if (input) {
-      // Focus the input first
-      input.focus();
-      // Clear and fill value
-      input.value = prompt;
-      // Dispatch input event to trigger React binding
-      input.dispatchEvent(new Event('input', { bubbles: true, cancelable: true }));
-      // Also try change event
-      input.dispatchEvent(new Event('change', { bubbles: true, cancelable: true }));
-      
-      // Give UI a moment to respond and enable the send button
-      setTimeout(() => {
-        // Find send button (DeepSeek usually has an SVG or specific class for send)
-        // A common selector for DeepSeek is the div containing the icon, or button nearby
-        // Using common structural patterns:
-        const sendBtnContainer = input.parentElement?.parentElement;
-        const potentialBtns = sendBtnContainer ? sendBtnContainer.querySelectorAll('div[role="button"], button') : document.querySelectorAll('div[role="button"], button');
-        
-        // Find the button that is likely the send button (often near the end of the input container)
-        // Or look for an SVG that looks like a send icon
-        let sendBtn = null;
-        for (let btn of Array.from(potentialBtns)) {
-          if (btn.querySelector('svg') && !btn.querySelector('svg').classList.contains('attach-icon')) {
-            sendBtn = btn;
-          }
-        }
-        // Fallback to the specific selector mentioned in design doc or simple nextElementSibling
-        if (!sendBtn) {
-           sendBtn = document.querySelector('div.ds-icon-button') || document.querySelector('button[aria-label="Send"]') || document.querySelector('.send-button') || input.nextElementSibling;
-        }
-        
-        if (sendBtn) {
-          sendBtn.click();
-          console.log('[Content Script] Clicked send button.');
+      // Execute simulated typing asynchronously
+      (async () => {
+        try {
+          await simulateTyping(input, prompt);
           
-          // Start polling for reply
-          waitForReply()
-            .then(reply => sendResponse({ success: true, reply }))
-            .catch(err => sendResponse({ success: false, error: err.message }));
+          // Give UI a moment to respond and enable the send button
+          await delay(randomInt(300, 700));
+          
+          // Find send button (DeepSeek usually has an SVG or specific class for send)
+          // A common selector for DeepSeek is the div containing the icon, or button nearby
+          // Using common structural patterns:
+          const sendBtnContainer = input.parentElement?.parentElement;
+          const potentialBtns = sendBtnContainer ? sendBtnContainer.querySelectorAll('div[role="button"], button') : document.querySelectorAll('div[role="button"], button');
+          
+          // Find the button that is likely the send button (often near the end of the input container)
+          // Or look for an SVG that looks like a send icon
+          let sendBtn = null;
+          for (let btn of Array.from(potentialBtns)) {
+            if (btn.querySelector('svg') && !btn.querySelector('svg').classList.contains('attach-icon')) {
+              sendBtn = btn;
+            }
+          }
+          // Fallback to the specific selector mentioned in design doc or simple nextElementSibling
+          if (!sendBtn) {
+             sendBtn = document.querySelector('div.ds-icon-button') || document.querySelector('button[aria-label="Send"]') || document.querySelector('.send-button') || input.nextElementSibling;
+          }
+          
+          if (sendBtn) {
+            // Hover simulation before clicking
+            sendBtn.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
+            await delay(randomInt(100, 300));
             
-        } else {
-          sendResponse({ success: false, error: 'Send button not found' });
+            sendBtn.click();
+            console.log('[Content Script] Clicked send button.');
+            
+            // Start polling for reply
+            waitForReply()
+              .then(reply => sendResponse({ success: true, reply }))
+              .catch(err => sendResponse({ success: false, error: err.message }));
+              
+          } else {
+            sendResponse({ success: false, error: 'Send button not found' });
+          }
+        } catch (error) {
+          sendResponse({ success: false, error: error.message });
         }
-      }, 500);
+      })();
       
       // Keep channel open for async response
       return true;
