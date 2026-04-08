@@ -5,6 +5,7 @@ const http = require('http');
 const setupWebSocket = require('./websocket/handler');
 const taskRoutes = require('./routes/tasks');
 const evolutionRoutes = require('./evolution/hot-reload');
+const watchExtension = require('./evolution/extension-watcher');
 
 const app = express();
 const port = process.env.PORT || 8080;
@@ -26,6 +27,9 @@ const server = http.createServer(app);
 
 // Initialize WebSocket Handler
 setupWebSocket(server);
+
+// Watch Chrome extension for hot reload
+watchExtension();
 
 server.listen(port, () => {
   console.log(`[Queue-Server] HTTP Server listening on port ${port}`);

@@ -124,6 +124,15 @@ function broadcastToWeb(message) {
   }
 }
 
+function broadcastToExtensions(message) {
+  const msgStr = JSON.stringify(message);
+  for (const client of extensionClients) {
+    if (client.readyState === WebSocket.OPEN) {
+      client.send(msgStr);
+    }
+  }
+}
+
 // Expose trigger to check queue when new tasks arrive
 function triggerAssign() {
   assignNextTask();
@@ -131,4 +140,5 @@ function triggerAssign() {
 
 module.exports = setupWebSocket;
 module.exports.broadcastToWeb = broadcastToWeb;
+module.exports.broadcastToExtensions = broadcastToExtensions;
 module.exports.triggerAssign = triggerAssign;
