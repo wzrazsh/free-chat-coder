@@ -1,0 +1,25 @@
+{
+  "manifest_version": 3,
+  "name": "DeepSeek Agent Bridge",
+  "version": "0.1.0",
+  "permissions": [
+    "offscreen",
+    "storage",
+    "scripting",
+    "webNavigation"
+  ],
+  "host_permissions": [
+    "https://chat.deepseek.com/*",
+    "http://localhost:8080/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://chat.deepseek.com/*"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ]
+}
