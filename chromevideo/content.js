@@ -8,21 +8,39 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     console.log('[Content Script] Submitting prompt:', prompt);
     
     // Find the textarea
-    // Note: Selector might change depending on DeepSeek's DOM structure updates
-    const input = document.querySelector('textarea');
+    // DeepSeek uses an editable div/textarea with specific IDs or generic selectors
+    const input = document.querySelector('textarea') || document.querySelector('#chat-input');
     
     if (input) {
+      // Focus the input first
+      input.focus();
       // Clear and fill value
       input.value = prompt;
       // Dispatch input event to trigger React binding
-      input.dispatchEvent(new Event('input', { bubbles: true }));
+      input.dispatchEvent(new Event('input', { bubbles: true, cancelable: true }));
+      // Also try change event
+      input.dispatchEvent(new Event('change', { bubbles: true, cancelable: true }));
       
-      // Give UI a moment to respond
+      // Give UI a moment to respond and enable the send button
       setTimeout(() => {
-        // Find send button (you may need to update this selector)
-        // Usually deepseek uses a specific icon or SVG inside a button or div
-        // We'll look for a button that is an immediate sibling or near the textarea
-        const sendBtn = document.querySelector('div.ds-icon-button') || document.querySelector('button[aria-label="Send"]') || document.querySelector('textarea').nextElementSibling;
+        // Find send button (DeepSeek usually has an SVG or specific class for send)
+        // A common selector for DeepSeek is the div containing the icon, or button nearby
+        // Using common structural patterns:
+        const sendBtnContainer = input.parentElement?.parentElement;
+        const potentialBtns = sendBtnContainer ? sendBtnContainer.querySelectorAll('div[role="button"], button') : document.querySelectorAll('div[role="button"], button');
+        
+        // Find the button that is likely the send button (often near the end of the input container)
+        // Or look for an SVG that looks like a send icon
+        let sendBtn = null;
+        for (let btn of Array.from(potentialBtns)) {
+          if (btn.querySelector('svg') && !btn.querySelector('svg').classList.contains('attach-icon')) {
+            sendBtn = btn;
+          }
+        }
+        // Fallback to the specific selector mentioned in design doc or simple nextElementSibling
+        if (!sendBtn) {
+           sendBtn = document.querySelector('div.ds-icon-button') || document.querySelector('button[aria-label="Send"]') || document.querySelector('.send-button') || input.nextElementSibling;
+        }
         
         if (sendBtn) {
           sendBtn.click();

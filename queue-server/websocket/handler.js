@@ -1,6 +1,7 @@
 // /workspace/queue-server/websocket/handler.js
 const WebSocket = require('ws');
 const queueManager = require('../queue/manager');
+const customHandler = require('../custom-handler');
 
 // Keep track of connected extension clients
 let extensionClients = new Set();
@@ -86,10 +87,20 @@ function assignNextTask() {
       // Update status to processing
       queueManager.updateTask(nextTask.id, { status: 'processing' });
       
+      // Apply custom evolutionary logic to the prompt
+      let processedPrompt = nextTask.prompt;
+      try {
+        if (customHandler && typeof customHandler.processTask === 'function') {
+          processedPrompt = customHandler.processTask(nextTask);
+        }
+      } catch (err) {
+        console.error('[WS] Error in custom-handler:', err);
+      }
+      
       // Send task to extension
       client.send(JSON.stringify({
         type: 'task_assigned',
-        task: nextTask
+        task: { ...nextTask, prompt: processedPrompt }
       }));
 
       // Broadcast update to web clients
