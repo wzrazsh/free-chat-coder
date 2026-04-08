@@ -2,8 +2,12 @@ import { useState, useEffect, useRef } from 'react';
 import { Activity, CheckCircle, Clock, XCircle, Plus, Code, LayoutDashboard, Terminal } from 'lucide-react';
 import Editor from '@monaco-editor/react';
 
-const API_URL = 'http://localhost:8080';
-const WS_URL = 'ws://localhost:8080';
+const API_BASE = '/api';
+
+function getWsUrl(path: string) {
+  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+  return `${protocol}//${window.location.host}${path}`;
+}
 
 interface Task {
   id: string;
@@ -24,25 +28,22 @@ function App() {
   const wsRef = useRef<WebSocket | null>(null);
 
   useEffect(() => {
-    // Fetch initial tasks
-    fetch(`${API_URL}/tasks`)
+    fetch(`${API_BASE}/tasks`)
       .then(res => res.json())
       .then(data => {
         if (data.tasks) setTasks(data.tasks);
       })
       .catch(err => console.error('Failed to fetch tasks:', err));
 
-    // Fetch initial custom handler code
-    fetch(`${API_URL}/evolve`)
+    fetch(`${API_BASE}/evolve`)
       .then(res => res.json())
       .then(data => {
         if (data.code) setCustomCode(data.code);
       })
       .catch(err => console.error('Failed to fetch custom handler code:', err));
 
-    // Connect WebSocket
     const connectWs = () => {
-      const ws = new WebSocket(WS_URL);
+      const ws = new WebSocket(getWsUrl('/ws'));
       
       ws.onopen = () => {
         setIsConnected(true);
@@ -83,7 +84,7 @@ function App() {
     if (!prompt.trim()) return;
 
     try {
-      await fetch(`${API_URL}/tasks`, {
+      await fetch(`${API_BASE}/tasks`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ prompt, options: {} })
@@ -96,13 +97,12 @@ function App() {
 
   const handleEvolveSubmit = async () => {
     try {
-      await fetch(`${API_URL}/evolve`, {
+      await fetch(`${API_BASE}/evolve`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ code: customCode })
       });
       setIsEvolveModalOpen(false);
-      // Wait a moment for nodemon to restart the server
       setTimeout(() => {
         window.location.reload();
       }, 1500);
@@ -122,8 +122,6 @@ function App() {
 
   return (
     <div className="h-screen flex flex-col bg-gray-50 text-gray-900 font-sans overflow-hidden">
-      
-      {/* Top Navigation Bar */}
       <header className="bg-white border-b border-gray-200 px-6 py-3 flex items-center justify-between flex-shrink-0 z-10">
         <div className="flex items-center gap-6">
           <h1 className="text-xl font-bold tracking-tight text-gray-800">Free Chat Coder</h1>
@@ -172,10 +170,7 @@ function App() {
         </div>
       </header>
 
-      {/* Main Content Area */}
       <main className="flex-1 relative overflow-hidden bg-gray-50">
-        
-        {/* Console View */}
         <div className={`absolute inset-0 overflow-y-auto p-8 transition-opacity duration-200 ${currentView === 'console' ? 'opacity-100 z-10' : 'opacity-0 z-0 pointer-events-none'}`}>
           <div className="max-w-4xl mx-auto space-y-8 pb-12">
             
@@ -251,7 +246,6 @@ function App() {
           </div>
         </div>
 
-        {/* IDE View */}
         <div className={`absolute inset-0 bg-[#1e1e1e] transition-opacity duration-200 ${currentView === 'ide' ? 'opacity-100 z-10' : 'opacity-0 z-0 pointer-events-none'}`}>
           {currentView === 'ide' && (
             <iframe 
@@ -265,7 +259,6 @@ function App() {
 
       </main>
 
-      {/* Evolve Modal */}
       {isEvolveModalOpen && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 z-50">
           <div className="bg-white rounded-xl shadow-xl w-full max-w-4xl flex flex-col" style={{ height: '80vh' }}>
