@@ -4,11 +4,20 @@ import { Activity, CheckCircle, Clock, XCircle, Plus } from 'lucide-react';
 const API_URL = 'http://localhost:8080';
 const WS_URL = 'ws://localhost:8080';
 
+interface Task {
+  id: string;
+  status: 'pending' | 'processing' | 'completed' | 'failed';
+  prompt: string;
+  result?: string;
+  error?: string;
+  createdAt: number;
+}
+
 function App() {
-  const [tasks, setTasks] = useState([]);
+  const [tasks, setTasks] = useState<Task[]>([]);
   const [prompt, setPrompt] = useState('');
   const [isConnected, setIsConnected] = useState(false);
-  const wsRef = useRef(null);
+  const wsRef = useRef<WebSocket | null>(null);
 
   useEffect(() => {
     // Fetch initial tasks
@@ -57,7 +66,7 @@ function App() {
     };
   }, []);
 
-  const handleSubmit = async (e) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!prompt.trim()) return;
 
@@ -73,7 +82,7 @@ function App() {
     }
   };
 
-  const getStatusIcon = (status) => {
+  const getStatusIcon = (status: Task['status']) => {
     switch (status) {
       case 'completed': return <CheckCircle className="text-green-500" size={20} />;
       case 'processing': return <Activity className="text-blue-500 animate-pulse" size={20} />;
