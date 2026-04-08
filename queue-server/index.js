@@ -8,7 +8,7 @@ const evolutionRoutes = require('./evolution/hot-reload');
 const watchExtension = require('./evolution/extension-watcher');
 
 const app = express();
-const port = process.env.PORT || 8080;
+const port = process.env.PORT || 8082;
 
 app.use(cors());
 app.use(express.json());
