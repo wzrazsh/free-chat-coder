@@ -7,8 +7,10 @@ const taskRoutes = require('./routes/tasks');
 const evolutionRoutes = require('./evolution/hot-reload');
 const watchExtension = require('./evolution/extension-watcher');
 
+const config = require('../shared/config');
+
 const app = express();
-const port = process.env.PORT || 8082;
+const port = config.queueServer.port;
 
 app.use(cors());
 app.use(express.json());

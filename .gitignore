@@ -1,1 +1,4 @@
 queue-server/node_modules/
+*.log
+.code-server*.log
+.codex-run*.log

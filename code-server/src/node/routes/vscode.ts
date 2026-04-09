@@ -18,6 +18,15 @@ export const router = express.Router()
 
 export const wsRouter = WsRouter()
 
+const toWorkbenchQueryPath = (entryPath: string): string => {
+  if (os.platform() !== "win32") {
+    return entryPath
+  }
+
+  const normalized = entryPath.replace(/\\/g, "/")
+  return normalized.startsWith("/") ? normalized : `/${normalized}`
+}
+
 /**
  * The API of VS Code's web client server.  code-server delegates requests to VS
  * Code here.
@@ -150,9 +159,9 @@ router.get("/", ensureVSCodeLoaded, async (req, res, next) => {
       const IS_WORKSPACE_FILE = entryIsFile && path.extname(lastEntry) === ".code-workspace"
 
       if (IS_WORKSPACE_FILE) {
-        workspace = lastEntry
+        workspace = toWorkbenchQueryPath(lastEntry)
       } else if (!entryIsFile) {
-        folder = lastEntry
+        folder = toWorkbenchQueryPath(lastEntry)
       }
     }
 
