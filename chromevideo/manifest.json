@@ -6,7 +6,9 @@
     "offscreen",
     "storage",
     "scripting",
-    "webNavigation"
+    "webNavigation",
+    "tabs",
+    "activeTab"
   ],
   "host_permissions": [
     "https://chat.deepseek.com/*",
@@ -20,10 +22,16 @@
       "matches": ["https://chat.deepseek.com/*"],
       "js": [
         "utils/dom-helpers.js",
+        "utils/anti-detection.js",
         "readers/chat-reader.js",
         "readers/session-reader.js",
         "readers/model-reader.js",
         "readers/page-state-reader.js",
+        "controllers/mode-controller.js",
+        "controllers/upload-controller.js",
+        "controllers/screenshot-controller.js",
+        "controllers/session-controller.js",
+        "controllers/prompt-controller.js",
         "content.js"
       ],
       "run_at": "document_idle"

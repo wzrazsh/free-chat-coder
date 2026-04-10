@@ -29,6 +29,20 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   } else if (msg.type === 'reload_extension') {
     console.log('[SW] Reloading extension by server request...');
     chrome.runtime.reload();
+  } else if (msg.type === 'capture_screenshot') {
+    const windowId = sender?.tab?.windowId;
+    if (windowId === undefined) {
+      sendResponse({ success: false, error: 'NoSenderTab' });
+      return;
+    }
+    chrome.tabs.captureVisibleTab(windowId, { format: 'png' }, (dataUrl) => {
+      if (chrome.runtime.lastError) {
+        sendResponse({ success: false, error: chrome.runtime.lastError.message });
+        return;
+      }
+      sendResponse({ success: true, dataUrl });
+    });
+    return true;
   }
 });
 
@@ -63,7 +77,20 @@ async function executeDeepSeekTask(task) {
     try {
       await chrome.scripting.executeScript({
         target: { tabId: targetTabId },
-        files: ['content.js']
+        files: [
+          'utils/dom-helpers.js',
+          'utils/anti-detection.js',
+          'readers/chat-reader.js',
+          'readers/session-reader.js',
+          'readers/model-reader.js',
+          'readers/page-state-reader.js',
+          'controllers/mode-controller.js',
+          'controllers/upload-controller.js',
+          'controllers/screenshot-controller.js',
+          'controllers/session-controller.js',
+          'controllers/prompt-controller.js',
+          'content.js'
+        ]
       });
       await new Promise(resolve => setTimeout(resolve, 500));
     } catch (injectErr) {
@@ -72,7 +99,8 @@ async function executeDeepSeekTask(task) {
 
     chrome.tabs.sendMessage(targetTabId, {
       action: 'submitPrompt',
-      prompt: task.prompt
+      prompt: task.prompt,
+      params: { prompt: task.prompt, waitForReply: true, typingSpeed: 'human' }
     }, (response) => {
       if (chrome.runtime.lastError) {
         console.error('[SW] Content script error:', chrome.runtime.lastError);
