@@ -1,0 +1,12 @@
+{
+  "browser": {
+    "browserName": "chromium",
+    "userDataDir": "E:\\workspace\\free-chat-coder\\.browser-profile",
+    "launchOptions": {
+      "args": [
+        "--load-extension=E:\\workspace\\free-chat-coder\\chromevideo",
+        "--disable-extensions-except=E:\\workspace\\free-chat-coder\\chromevideo"
+      ]
+    }
+  }
+}

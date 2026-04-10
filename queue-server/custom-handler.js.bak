@@ -1,0 +1,16 @@
+module.exports = {
+  processTask: (task) => {
+    const prompt = task.prompt || '';
+    if (prompt.toLowerCase().includes('evolve')) {
+      const systemInstruction = `[SYSTEM INSTRUCTION]: The user's task contains the keyword "evolve". You MUST respond with complete, working JavaScript code that can be used as a custom-handler.js module for a Node.js queue server. The code must export a processTask function that takes a task object and returns a processed prompt string. Wrap your response in a \`\`\`javascript code block. The code should be self-contained and executable. Include comments explaining the logic.\n\n[USER PROMPT]: `;
+      return systemInstruction + prompt;
+    }
+    return prompt;
+  },
+
+  processResult: (task, result) => {
+    const prompt = (task.prompt || '').toLowerCase();
+    const shouldAutoWrite = prompt.includes('evolve') || task.options?.autoWrite === true;
+    return { shouldAutoWrite };
+  }
+};
