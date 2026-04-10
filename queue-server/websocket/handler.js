@@ -43,24 +43,70 @@ function setupWebSocket(server) {
           console.log(`[WS] Task update received for ${data.taskId}: ${data.status}`);
           const { taskId, status, result, error } = data;
           
-          const updatedTask = queueManager.updateTask(taskId, { status, result, error });
-          if (updatedTask) {
-            // Broadcast update to web clients
-            broadcastToWeb({
-              type: 'task_update',
-              task: updatedTask
-            });
+          let task = queueManager.getTask(taskId);
+          if (!task) return;
 
-            // If task is completed or failed, we can try to assign the next one
-            if (status === 'completed' || status === 'failed') {
-              assignNextTask();
-            }
+          // Agent 层核心：如果任务状态是 completed，且存在 processResult，交给它处理多轮动作
+          if (status === 'completed' && customHandler && typeof customHandler.processResult === 'function') {
+            const wsClients = {
+              extension: extensionClients.values().next().value,
+              web: Array.from(webClients)
+            };
+            
+            customHandler.processResult(task, result, wsClients).then(processRes => {
+              if (processRes.status === 'processing') {
+                // 还有下一轮，继续发送 prompt
+                queueManager.updateTask(taskId, { status: 'processing' });
+                
+                // 将下一轮反馈发给扩展
+                if (wsClients.extension && wsClients.extension.readyState === WebSocket.OPEN) {
+                  wsClients.extension.send(JSON.stringify({
+                    type: 'task_assigned',
+                    task: { ...task, prompt: processRes.nextPrompt }
+                  }));
+                }
+                
+                broadcastToWeb({
+                  type: 'task_update',
+                  task: queueManager.getTask(taskId)
+                });
+              } else {
+                // 真正结束
+                finishTaskUpdate(taskId, processRes.status, processRes.result || processRes.result, processRes.error);
+              }
+            }).catch(err => {
+              finishTaskUpdate(taskId, 'failed', null, err.message);
+            });
+          } else {
+            finishTaskUpdate(taskId, status, result, error);
           }
+        }
+        
+        // 处理扩展动作执行的回调 (比如 new_session, screenshot)
+        else if (data.type === 'action_result') {
+          // TODO: 将来支持更复杂的扩展内动作反馈
+          console.log(`[WS] Extension action result received for task ${data.taskId}`);
         }
       } catch (err) {
         console.error('[WS] Error parsing message:', err);
       }
     });
+
+    function finishTaskUpdate(taskId, status, result, error) {
+      const updatedTask = queueManager.updateTask(taskId, { status, result, error });
+      if (updatedTask) {
+        // Broadcast update to web clients
+        broadcastToWeb({
+          type: 'task_update',
+          task: updatedTask
+        });
+
+        // If task is completed or failed, we can try to assign the next one
+        if (status === 'completed' || status === 'failed') {
+          assignNextTask();
+        }
+      }
+    }
 
     ws.on('close', () => {
       console.log(`[WS] Client disconnected (${clientType})`);
