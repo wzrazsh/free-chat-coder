@@ -87,6 +87,30 @@ function setupWebSocket(server) {
           // TODO: 将来支持更复杂的扩展内动作反馈
           console.log(`[WS] Extension action result received for task ${data.taskId}`);
         }
+        
+        // 处理扩展自动发起的进化请求
+        else if (data.type === 'auto_evolve') {
+          console.log(`[WS] Auto-evolve request received: ${data.errorType}`);
+          
+          const prompt = `[自动进化任务]
+系统检测到以下问题需要修复：
+- 错误类型: ${data.errorType}
+- 错误信息: ${data.errorMessage}
+- 发生位置: ${data.location || 'Unknown'}
+- 当前代码: ${data.currentCode || 'Unknown'}
+
+请分析问题原因并提供修复后的完整代码。使用 evolve_extension 动作来应用修改。`;
+
+          // 自动创建一个新任务放到队列头部
+          const task = queueManager.addTask(prompt, {
+            autoEvolve: true,
+            skipSystemInstruction: false,
+            maxRounds: 5
+          });
+          
+          broadcastToWeb({ type: 'task_update', task });
+          assignNextTask();
+        }
       } catch (err) {
         console.error('[WS] Error parsing message:', err);
       }
