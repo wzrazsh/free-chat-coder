@@ -56,13 +56,20 @@ async function executeDeepSeekTask(task) {
       });
     } else {
       targetTabId = tabs[0].id;
-      // Make the tab active just in case
       await chrome.tabs.update(targetTabId, { active: true });
-      // Give it a moment if we just switched to it
       await new Promise(resolve => setTimeout(resolve, 500));
     }
 
-    // 2. Send task to content script
+    try {
+      await chrome.scripting.executeScript({
+        target: { tabId: targetTabId },
+        files: ['content.js']
+      });
+      await new Promise(resolve => setTimeout(resolve, 500));
+    } catch (injectErr) {
+      console.log('[SW] Content script already injected or injection skipped:', injectErr.message);
+    }
+
     chrome.tabs.sendMessage(targetTabId, {
       action: 'submitPrompt',
       prompt: task.prompt

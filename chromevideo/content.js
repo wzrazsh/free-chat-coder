@@ -101,12 +101,11 @@ function waitForReply() {
       let lastText = '';
       let identicalCount = 0;
       let hasStartedReplying = false;
+      const STABLE_THRESHOLD = 20;
       
       const pollInterval = setInterval(() => {
-        // Find the last markdown block
         const messageBlocks = document.querySelectorAll('.ds-markdown, .markdown-body, div[class*="markdown"]');
         if (messageBlocks.length === 0) {
-          // If not started replying yet, just keep waiting
           return;
         }
         
@@ -114,30 +113,37 @@ function waitForReply() {
         const lastBlock = messageBlocks[messageBlocks.length - 1];
         const currentText = lastBlock.innerText || lastBlock.textContent;
         
+        const stopBtn = document.querySelector('div[class*="stop"]') || document.querySelector('button[class*="stop"]') || document.querySelector('[data-testid="stop-button"]');
+        const isGenerating = !!stopBtn;
+        
+        if (isGenerating) {
+          identicalCount = 0;
+          lastText = currentText;
+          return;
+        }
+        
         if (currentText && currentText === lastText) {
           identicalCount++;
-          // If text hasn't changed for 10 iterations (5 seconds), assume generation complete
-          if (identicalCount >= 10) {
+          if (identicalCount >= STABLE_THRESHOLD) {
             clearInterval(pollInterval);
             console.log('[Content Script] Reply generation finished.');
             resolve(currentText);
           }
         } else {
           lastText = currentText;
-          identicalCount = 0; // reset count if text is still changing
+          identicalCount = 0;
         }
       }, 500);
       
-      // Timeout after 2 minutes
       setTimeout(() => {
         clearInterval(pollInterval);
         if (hasStartedReplying) {
-          resolve(lastText); // Return partial response if timeout
+          resolve(lastText);
         } else {
-          reject(new Error('TimeoutWaitingForReply: DeepSeek did not respond within 2 minutes'));
+          reject(new Error('TimeoutWaitingForReply: DeepSeek did not respond within 3 minutes'));
         }
-      }, 120000);
+      }, 180000);
       
-    }, 2000);
+    }, 3000);
   });
 }

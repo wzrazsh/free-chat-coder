@@ -9,6 +9,10 @@ export default defineConfig({
     react(),
     tailwindcss(),
   ],
+  define: {
+    __APP_WORKSPACE_PATH__: JSON.stringify(config.workspace.path),
+    __APP_WEB_IDE_URL__: JSON.stringify(config.webIde.httpUrl)
+  },
   server: {
     proxy: {
       '/api': {
@@ -21,11 +25,6 @@ export default defineConfig({
         changeOrigin: true,
         ws: true,
         rewrite: (path) => path.replace(/^\/ws/, '')
-      },
-      '/ide': {
-        target: config.webIde.httpUrl,
-        ws: true,
-        rewrite: (path) => path.replace(/^\/ide/, '')
       }
     }
   }

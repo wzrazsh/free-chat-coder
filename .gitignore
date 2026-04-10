@@ -1,4 +1,3 @@
-queue-server/node_modules/
+node_modules/
 *.log
-.code-server*.log
-.codex-run*.log
+.browser-profile

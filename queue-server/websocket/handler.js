@@ -1,11 +1,9 @@
-// /workspace/queue-server/websocket/handler.js
 const WebSocket = require('ws');
 const queueManager = require('../queue/manager');
 const customHandler = require('../custom-handler');
+const codeWriter = require('../evolution/code-writer');
 
-// Keep track of connected extension clients
 let extensionClients = new Set();
-// Keep track of web console clients
 let webClients = new Set();
 
 function setupWebSocket(server) {
@@ -19,13 +17,11 @@ function setupWebSocket(server) {
       try {
         const data = JSON.parse(message);
         
-        // Handle registration
         if (data.type === 'register') {
           clientType = data.clientType;
           if (clientType === 'extension') {
             extensionClients.add(ws);
             console.log('[WS] Extension registered');
-            // Try to assign pending task if any
             assignNextTask();
           } else if (clientType === 'web') {
             webClients.add(ws);
@@ -33,25 +29,54 @@ function setupWebSocket(server) {
           }
         }
         
-        // Handle ping/pong
         else if (data.type === 'ping') {
           ws.send(JSON.stringify({ type: 'pong' }));
         }
 
-        // Handle task updates from extension
         else if (data.type === 'task_update') {
           console.log(`[WS] Task update received for ${data.taskId}: ${data.status}`);
           const { taskId, status, result, error } = data;
           
-          const updatedTask = queueManager.updateTask(taskId, { status, result, error });
+          let writeResult = null;
+
+          if (status === 'completed' && result) {
+            try {
+              const task = queueManager.getTask(taskId);
+              if (task) {
+                let shouldAutoWrite = false;
+                if (customHandler && typeof customHandler.processResult === 'function') {
+                  const handlerResult = customHandler.processResult(task, result);
+                  shouldAutoWrite = handlerResult.shouldAutoWrite;
+                }
+
+                if (shouldAutoWrite) {
+                  writeResult = codeWriter.writeCodeToFiles(task, result);
+                  if (writeResult.success) {
+                    console.log(`[WS] Auto-wrote code to ${writeResult.filesWritten.length} file(s)`);
+                  } else {
+                    console.log(`[WS] Auto-write skipped: ${writeResult.reason}`);
+                  }
+                }
+              }
+            } catch (err) {
+              console.error('[WS] Error in auto-write:', err);
+            }
+          }
+
+          const updatedTask = queueManager.updateTask(taskId, { 
+            status, 
+            result, 
+            error,
+            ...(writeResult && writeResult.success ? { codeWriteResult: writeResult } : {})
+          });
+
           if (updatedTask) {
-            // Broadcast update to web clients
             broadcastToWeb({
               type: 'task_update',
-              task: updatedTask
+              task: updatedTask,
+              ...(writeResult ? { codeWriteResult: writeResult } : {})
             });
 
-            // If task is completed or failed, we can try to assign the next one
             if (status === 'completed' || status === 'failed') {
               assignNextTask();
             }
@@ -73,21 +98,17 @@ function setupWebSocket(server) {
   });
 }
 
-// Push next pending task to an available extension client
 function assignNextTask() {
   if (extensionClients.size === 0) {
     return;
   }
 
-  // Currently just pick the first available extension client
   const client = extensionClients.values().next().value;
   if (client && client.readyState === WebSocket.OPEN) {
     const nextTask = queueManager.getNextPendingTask();
     if (nextTask) {
-      // Update status to processing
       queueManager.updateTask(nextTask.id, { status: 'processing' });
       
-      // Apply custom evolutionary logic to the prompt
       let processedPrompt = nextTask.prompt;
       try {
         if (customHandler && typeof customHandler.processTask === 'function') {
@@ -97,13 +118,11 @@ function assignNextTask() {
         console.error('[WS] Error in custom-handler:', err);
       }
       
-      // Send task to extension
       client.send(JSON.stringify({
         type: 'task_assigned',
         task: { ...nextTask, prompt: processedPrompt }
       }));
 
-      // Broadcast update to web clients
       broadcastToWeb({
         type: 'task_update',
         task: queueManager.getTask(nextTask.id)
@@ -114,7 +133,6 @@ function assignNextTask() {
   }
 }
 
-// Expose broadcast to web clients so HTTP API can use it
 function broadcastToWeb(message) {
   const msgStr = JSON.stringify(message);
   for (const client of webClients) {
@@ -133,7 +151,6 @@ function broadcastToExtensions(message) {
   }
 }
 
-// Expose trigger to check queue when new tasks arrive
 function triggerAssign() {
   assignNextTask();
 }

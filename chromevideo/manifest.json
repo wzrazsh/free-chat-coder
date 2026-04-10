@@ -10,7 +10,7 @@
   ],
   "host_permissions": [
     "https://chat.deepseek.com/*",
-    "http://127.0.0.1:8082/*"
+    "http://localhost:8082/*"
   ],
   "background": {
     "service_worker": "background.js"

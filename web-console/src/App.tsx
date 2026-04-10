@@ -1,16 +1,37 @@
 import { useState, useEffect, useRef } from 'react';
-import { Activity, CheckCircle, Clock, XCircle, Plus, Code, LayoutDashboard, Terminal } from 'lucide-react';
+import { Activity, CheckCircle, Clock, XCircle, Plus, Code, LayoutDashboard, Terminal, FileCode } from 'lucide-react';
 import Editor from '@monaco-editor/react';
 
-import config from '../../shared/config.js';
+declare const __APP_WORKSPACE_PATH__: string;
+declare const __APP_WEB_IDE_URL__: string;
 
 const API_BASE = '/api';
-const WEB_IDE_FOLDER = config.workspace.path;
-const WEB_IDE_SRC = `/ide/?folder=${encodeURIComponent(WEB_IDE_FOLDER)}`;
+const WEB_IDE_FOLDER = __APP_WORKSPACE_PATH__;
+function toVSCodeFolderPath(p: string): string {
+  if (/^[A-Za-z]:/.test(p)) {
+    return `/${p[0]}%3A${p.slice(2)}`;
+  }
+  return p;
+}
+const WEB_IDE_SRC = `${__APP_WEB_IDE_URL__}/?folder=${toVSCodeFolderPath(WEB_IDE_FOLDER)}`;
 
 function getWsUrl(path: string) {
   const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
   return `${protocol}//${window.location.host}${path}`;
+}
+
+interface CodeWriteFile {
+  path: string;
+  language: string;
+  size: number;
+  backed?: boolean;
+}
+
+interface CodeWriteResult {
+  success: boolean;
+  reason?: string;
+  filesWritten: CodeWriteFile[];
+  totalBlocks?: number;
 }
 
 interface Task {
@@ -20,6 +41,7 @@ interface Task {
   result?: string;
   error?: string;
   createdAt: number;
+  codeWriteResult?: CodeWriteResult;
 }
 
 function App() {
@@ -59,7 +81,11 @@ function App() {
           if (data.type === 'task_added') {
             setTasks(prev => [...prev, data.task]);
           } else if (data.type === 'task_update') {
-            setTasks(prev => prev.map(t => t.id === data.task.id ? data.task : t));
+            const updatedTask = data.task;
+            if (data.codeWriteResult) {
+              updatedTask.codeWriteResult = data.codeWriteResult;
+            }
+            setTasks(prev => prev.map(t => t.id === updatedTask.id ? updatedTask : t));
           }
         } catch (err) {
           console.error('Failed to parse WS message:', err);
@@ -138,6 +164,8 @@ function App() {
             </button>
             <a
               href={WEB_IDE_SRC}
+              target="_blank"
+              rel="noopener noreferrer"
               className="flex items-center gap-2 px-4 py-1.5 rounded-md font-medium text-sm transition-all text-gray-600 hover:text-gray-900"
             >
               <Terminal size={16} />
@@ -234,6 +262,20 @@ function App() {
                       {(task.result || task.error) && (
                         <div className={`mt-3 p-3 rounded-md text-sm font-mono whitespace-pre-wrap ${task.error ? 'bg-red-50 text-red-800 border border-red-100' : 'bg-gray-50 text-gray-800 border border-gray-200'}`}>
                           {task.error ? `Error: ${task.error}` : `Result:\n${task.result}`}
+                        </div>
+                      )}
+                      {task.codeWriteResult && task.codeWriteResult.success && (
+                        <div className="mt-2 p-2.5 rounded-md bg-emerald-50 border border-emerald-200 flex items-center gap-2">
+                          <FileCode size={16} className="text-emerald-600 flex-shrink-0" />
+                          <div className="text-sm text-emerald-800">
+                            <span className="font-medium">Code written to: </span>
+                            {task.codeWriteResult.filesWritten.map((f, i) => (
+                              <span key={i}>
+                                {i > 0 && ', '}
+                                <span className="font-mono bg-emerald-100 px-1.5 py-0.5 rounded text-emerald-700">{f.path}</span>
+                              </span>
+                            ))}
+                          </div>
                         </div>
                       )}
                     </div>
