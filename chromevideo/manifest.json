@@ -18,7 +18,14 @@
   "content_scripts": [
     {
       "matches": ["https://chat.deepseek.com/*"],
-      "js": ["content.js"],
+      "js": [
+        "utils/dom-helpers.js",
+        "readers/chat-reader.js",
+        "readers/session-reader.js",
+        "readers/model-reader.js",
+        "readers/page-state-reader.js",
+        "content.js"
+      ],
       "run_at": "document_idle"
     }
   ]

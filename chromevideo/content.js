@@ -38,6 +38,29 @@ async function simulateTyping(input, text) {
 }
 
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+  // === 感知层 (Read) ===
+  if (msg.action === 'readChatContent') {
+    sendResponse(window.ChatReader.readChatContent(msg.params));
+    return;
+  }
+  if (msg.action === 'readLatestReply') {
+    sendResponse(window.ChatReader.readLatestReply(msg.params));
+    return;
+  }
+  if (msg.action === 'readSessionList') {
+    sendResponse(window.SessionReader.readSessionList(msg.params));
+    return;
+  }
+  if (msg.action === 'readModelState') {
+    sendResponse(window.ModelReader.readModelState(msg.params));
+    return;
+  }
+  if (msg.action === 'readPageState') {
+    sendResponse(window.PageStateReader.readPageState(msg.params));
+    return;
+  }
+
+  // === 操控层 (Write) ===
   if (msg.action === 'submitPrompt') {
     const prompt = msg.prompt;
     console.log('[Content Script] Submitting prompt:', prompt);
