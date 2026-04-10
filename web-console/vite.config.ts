@@ -1,6 +1,7 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
+import config from '../shared/config.js'
 
 // https://vite.dev/config/
 export default defineConfig({
@@ -8,23 +9,22 @@ export default defineConfig({
     react(),
     tailwindcss(),
   ],
+  define: {
+    __APP_WORKSPACE_PATH__: JSON.stringify(config.workspace.path),
+    __APP_WEB_IDE_URL__: JSON.stringify(config.webIde.httpUrl)
+  },
   server: {
     proxy: {
       '/api': {
-        target: 'http://127.0.0.1:8082',
+        target: config.queueServer.httpUrl,
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/api/, '')
       },
       '/ws': {
-        target: 'ws://127.0.0.1:8082',
+        target: config.queueServer.wsUrl,
         changeOrigin: true,
         ws: true,
         rewrite: (path) => path.replace(/^\/ws/, '')
-      },
-      '/ide': {
-        target: 'http://127.0.0.1:8081',
-        ws: true,
-        rewrite: (path) => path.replace(/^\/ide/, '')
       }
     }
   }

@@ -1,12 +1,37 @@
 import { useState, useEffect, useRef } from 'react';
-import { Activity, CheckCircle, Clock, XCircle, Plus, Code, LayoutDashboard, Terminal } from 'lucide-react';
+import { Activity, CheckCircle, Clock, XCircle, Plus, Code, LayoutDashboard, Terminal, FileCode } from 'lucide-react';
 import Editor from '@monaco-editor/react';
 
+declare const __APP_WORKSPACE_PATH__: string;
+declare const __APP_WEB_IDE_URL__: string;
+
 const API_BASE = '/api';
+const WEB_IDE_FOLDER = __APP_WORKSPACE_PATH__;
+function toVSCodeFolderPath(p: string): string {
+  if (/^[A-Za-z]:/.test(p)) {
+    return `/${p[0]}%3A${p.slice(2)}`;
+  }
+  return p;
+}
+const WEB_IDE_SRC = `${__APP_WEB_IDE_URL__}/?folder=${toVSCodeFolderPath(WEB_IDE_FOLDER)}`;
 
 function getWsUrl(path: string) {
   const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
   return `${protocol}//${window.location.host}${path}`;
+}
+
+interface CodeWriteFile {
+  path: string;
+  language: string;
+  size: number;
+  backed?: boolean;
+}
+
+interface CodeWriteResult {
+  success: boolean;
+  reason?: string;
+  filesWritten: CodeWriteFile[];
+  totalBlocks?: number;
 }
 
 interface Task {
@@ -16,6 +41,7 @@ interface Task {
   result?: string;
   error?: string;
   createdAt: number;
+  codeWriteResult?: CodeWriteResult;
 }
 
 function App() {
@@ -23,7 +49,6 @@ function App() {
   const [prompt, setPrompt] = useState('');
   const [isConnected, setIsConnected] = useState(false);
   const [isEvolveModalOpen, setIsEvolveModalOpen] = useState(false);
-  const [currentView, setCurrentView] = useState<'console' | 'ide'>('console');
   const [customCode, setCustomCode] = useState('// Fetching current custom-handler.js...');
   const wsRef = useRef<WebSocket | null>(null);
 
@@ -56,7 +81,11 @@ function App() {
           if (data.type === 'task_added') {
             setTasks(prev => [...prev, data.task]);
           } else if (data.type === 'task_update') {
-            setTasks(prev => prev.map(t => t.id === data.task.id ? data.task : t));
+            const updatedTask = data.task;
+            if (data.codeWriteResult) {
+              updatedTask.codeWriteResult = data.codeWriteResult;
+            }
+            setTasks(prev => prev.map(t => t.id === updatedTask.id ? updatedTask : t));
           }
         } catch (err) {
           console.error('Failed to parse WS message:', err);
@@ -128,41 +157,32 @@ function App() {
 
           <nav className="flex items-center gap-2 bg-gray-100 p-1 rounded-lg">
             <button
-              onClick={() => setCurrentView('console')}
-              className={`flex items-center gap-2 px-4 py-1.5 rounded-md font-medium text-sm transition-all ${
-                currentView === 'console'
-                  ? 'bg-white text-blue-600 shadow-sm'
-                  : 'text-gray-600 hover:text-gray-900'
-              }`}
+              className="flex items-center gap-2 px-4 py-1.5 rounded-md font-medium text-sm transition-all bg-white text-blue-600 shadow-sm"
             >
               <LayoutDashboard size={16} />
               Console
             </button>
-            <button
-              onClick={() => setCurrentView('ide')}
-              className={`flex items-center gap-2 px-4 py-1.5 rounded-md font-medium text-sm transition-all ${
-                currentView === 'ide'
-                  ? 'bg-white text-blue-600 shadow-sm'
-                  : 'text-gray-600 hover:text-gray-900'
-              }`}
+            <a
+              href={WEB_IDE_SRC}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center gap-2 px-4 py-1.5 rounded-md font-medium text-sm transition-all text-gray-600 hover:text-gray-900"
             >
               <Terminal size={16} />
               Web IDE
-            </button>
+            </a>
           </nav>
         </div>
 
         <div className="flex items-center gap-6">
-          {currentView === 'console' && (
-            <button
-              onClick={() => setIsEvolveModalOpen(true)}
-              className="flex items-center gap-2 px-3 py-1.5 bg-indigo-50 text-indigo-700 hover:bg-indigo-100 rounded-md font-medium transition-colors text-sm border border-indigo-200"
-              title="Evolve System Logic"
-            >
-              <Code size={16} />
-              Evolve Handler
-            </button>
-          )}
+          <button
+            onClick={() => setIsEvolveModalOpen(true)}
+            className="flex items-center gap-2 px-3 py-1.5 bg-indigo-50 text-indigo-700 hover:bg-indigo-100 rounded-md font-medium transition-colors text-sm border border-indigo-200"
+            title="Evolve System Logic"
+          >
+            <Code size={16} />
+            Evolve Handler
+          </button>
           <div className="flex items-center gap-2">
             <span className="text-sm font-medium text-gray-600">WS:</span>
             <div className={`h-2.5 w-2.5 rounded-full ${isConnected ? 'bg-green-500' : 'bg-red-500'}`} />
@@ -171,7 +191,7 @@ function App() {
       </header>
 
       <main className="flex-1 relative overflow-hidden bg-gray-50">
-        <div className={`absolute inset-0 overflow-y-auto p-8 transition-opacity duration-200 ${currentView === 'console' ? 'opacity-100 z-10' : 'opacity-0 z-0 pointer-events-none'}`}>
+        <div className="absolute inset-0 overflow-y-auto p-8">
           <div className="max-w-4xl mx-auto space-y-8 pb-12">
 
             <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
@@ -216,27 +236,48 @@ function App() {
               ) : (
                 <div className="space-y-3">
                   {tasks.map((task) => (
-                    <div key={task.id} className="flex items-center justify-between p-4 border border-gray-100 rounded-lg hover:border-blue-100 hover:bg-blue-50/30 transition-all">
-                      <div className="flex items-center gap-4 flex-1 min-w-0 pr-4">
-                        {getStatusIcon(task.status)}
-                        <div className="flex-1 min-w-0">
-                          <h3 className="font-medium text-gray-900 truncate">{task.prompt}</h3>
-                          <p className="text-xs text-gray-500 font-mono mt-1">ID: {task.id}</p>
+                    <div key={task.id} className="flex flex-col p-4 border border-gray-100 rounded-lg hover:border-blue-100 hover:bg-blue-50/30 transition-all">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-4 flex-1 min-w-0 pr-4">
+                          {getStatusIcon(task.status)}
+                          <div className="flex-1 min-w-0">
+                            <h3 className="font-medium text-gray-900 truncate">{task.prompt}</h3>
+                            <p className="text-xs text-gray-500 font-mono mt-1">ID: {task.id}</p>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-4 text-sm whitespace-nowrap">
+                          <span className={`px-2.5 py-1 rounded-md font-medium text-xs uppercase tracking-wider ${
+                            task.status === 'completed' ? 'bg-green-100 text-green-700 border border-green-200' :
+                            task.status === 'processing' ? 'bg-blue-100 text-blue-700 border border-blue-200' :
+                            task.status === 'failed' ? 'bg-red-100 text-red-700 border border-red-200' :
+                            'bg-gray-100 text-gray-700 border border-gray-200'
+                          }`}>
+                            {task.status}
+                          </span>
+                          <span className="text-gray-400 tabular-nums">
+                            {new Date(task.createdAt).toLocaleTimeString()}
+                          </span>
                         </div>
                       </div>
-                      <div className="flex items-center gap-4 text-sm whitespace-nowrap">
-                        <span className={`px-2.5 py-1 rounded-md font-medium text-xs uppercase tracking-wider ${
-                          task.status === 'completed' ? 'bg-green-100 text-green-700 border border-green-200' :
-                          task.status === 'processing' ? 'bg-blue-100 text-blue-700 border border-blue-200' :
-                          task.status === 'failed' ? 'bg-red-100 text-red-700 border border-red-200' :
-                          'bg-gray-100 text-gray-700 border border-gray-200'
-                        }`}>
-                          {task.status}
-                        </span>
-                        <span className="text-gray-400 tabular-nums">
-                          {new Date(task.createdAt).toLocaleTimeString()}
-                        </span>
-                      </div>
+                      {(task.result || task.error) && (
+                        <div className={`mt-3 p-3 rounded-md text-sm font-mono whitespace-pre-wrap ${task.error ? 'bg-red-50 text-red-800 border border-red-100' : 'bg-gray-50 text-gray-800 border border-gray-200'}`}>
+                          {task.error ? `Error: ${task.error}` : `Result:\n${task.result}`}
+                        </div>
+                      )}
+                      {task.codeWriteResult && task.codeWriteResult.success && (
+                        <div className="mt-2 p-2.5 rounded-md bg-emerald-50 border border-emerald-200 flex items-center gap-2">
+                          <FileCode size={16} className="text-emerald-600 flex-shrink-0" />
+                          <div className="text-sm text-emerald-800">
+                            <span className="font-medium">Code written to: </span>
+                            {task.codeWriteResult.filesWritten.map((f, i) => (
+                              <span key={i}>
+                                {i > 0 && ', '}
+                                <span className="font-mono bg-emerald-100 px-1.5 py-0.5 rounded text-emerald-700">{f.path}</span>
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      )}
                     </div>
                   ))}
                 </div>
@@ -245,18 +286,6 @@ function App() {
 
           </div>
         </div>
-
-        <div className={`absolute inset-0 bg-[#1e1e1e] transition-opacity duration-200 ${currentView === 'ide' ? 'opacity-100 z-10' : 'opacity-0 z-0 pointer-events-none'}`}>
-          {currentView === 'ide' && (
-            <iframe
-              src="/ide/?folder=/workspace"
-              className="w-full h-full border-none"
-              title="Web IDE"
-              allow="clipboard-read; clipboard-write"
-            />
-          )}
-        </div>
-
       </main>
 
       {isEvolveModalOpen && (
