@@ -145,5 +145,563 @@
       ],
       "totalBlocks": 1
     }
+  },
+  {
+    "id": "1775892588366-9cubc",
+    "prompt": "扩展输入测试，已经修复App.tsx。",
+    "options": {},
+    "status": "failed",
+    "createdAt": "2026-04-11T07:29:48.366Z",
+    "updatedAt": "2026-04-11T07:39:14.045Z",
+    "error": "Could not establish connection. Receiving end does not exist."
+  },
+  {
+    "id": "1775892709921-uvf3q",
+    "prompt": "扩展插件输入测试。修改并保存 App.tsx，现在端口是8082.",
+    "options": {},
+    "status": "failed",
+    "createdAt": "2026-04-11T07:31:49.921Z",
+    "updatedAt": "2026-04-11T07:39:14.566Z",
+    "error": "Could not establish connection. Receiving end does not exist."
+  },
+  {
+    "id": "1775893220270-rzf5s",
+    "prompt": "扩展插件输入测试。修改并保存 App.tsx，现在端口是8080.",
+    "options": {},
+    "status": "failed",
+    "createdAt": "2026-04-11T07:40:20.270Z",
+    "updatedAt": "2026-04-11T07:40:20.815Z",
+    "error": "Could not establish connection. Receiving end does not exist."
+  },
+  {
+    "id": "1775893358010-htu55",
+    "prompt": "扩展插件输入测试。修改并保存 App.tsx、index.js，现在端口是8080.",
+    "options": {},
+    "status": "failed",
+    "createdAt": "2026-04-11T07:42:38.010Z",
+    "updatedAt": "2026-04-11T07:42:38.548Z",
+    "error": "Could not establish connection. Receiving end does not exist."
+  },
+  {
+    "id": "1775897599113-9o960",
+    "prompt": "扩展插件输入测试。修改并保存 App.tsx、index.js，现在端口是8080.",
+    "options": {},
+    "status": "completed",
+    "createdAt": "2026-04-11T08:53:19.113Z",
+    "updatedAt": "2026-04-11T08:53:55.726Z",
+    "result": "好的，现在端口统一为 8080 了。但之前的错误 Could not establish connection. Receiving end does not exist. 说明扩展的 Content Script 还是没有正确注入到 DeepSeek 页面。\n\n🔍 先确认当前状态\n\n请依次检查以下几点，并把结果告诉我：\n\n1. 扩展是否成功注册到后端？\n查看 Queue-Server 终端，是否有：\n\ntext\n复制\n下载\n[WS] Extension registered\n\n如果没有，说明 WebSocket 还没连通。请确认：\n\nchromevideo/offscreen.js 中的 WS_URL 是 ws://localhost:8080\n\n在 chrome://extensions/ 中点击扩展的刷新按钮 🔄\n\n2. Content Script 是否注入成功？\n\n打开 https://chat.deepseek.com/\n\n按 F12 打开开发者工具，切换到 Console 面板\n\n看看有没有 [Content Script] Injected on DeepSeek page. 这条日志\n\n如果没有这条日志，说明 Content Script 根本没注入。可能原因：\n\nmanifest.json 中的 matches 模式不对\n\n扩展没有正确加载\n\n3. 扩展的 Service Worker 是否正常运行？\n\n在 chrome://extensions/ 页面，点击 DeepSeek Agent Bridge 卡片上的 service worker 链接\n\n会弹出一个开发者工具窗口，查看里面的 Console\n\n是否有红色错误？有没有 [SW] 开头的日志？\n\n🛠️ 如果 Content Script 确实没有注入\n\n可以尝试以下修复：\n\n检查 manifest.json 配置：\n\njson\n复制\n下载\n{\n  \"manifest_version\": 3,\n  \"name\": \"DeepSeek Agent Bridge\",\n  \"version\": \"0.1.0\",\n  \"permissions\": [\n    \"offscreen\",\n    \"storage\",\n    \"scripting\",\n    \"webNavigation\",\n    \"tabs\"\n  ],\n  \"host_permissions\": [\n    \"https://chat.deepseek.com/*\",\n    \"http://localhost:8080/*\"\n  ],\n  \"background\": {\n    \"service_worker\": \"background.js\"\n  },\n  \"content_scripts\": [\n    {\n      \"matches\": [\"https://chat.deepseek.com/*\"],\n      \"js\": [\"content.js\"],\n      \"run_at\": \"document_idle\"\n    }\n  ]\n}\n\n特别注意：\n\nhost_permissions 中必须包含 https://chat.deepseek.com/*\n\ncontent_scripts 中的 matches 必须精确匹配\n\n如果配置正确但仍未注入：\n\n在 chrome://extensions/ 中移除扩展\n\n重新点击 \"加载已解压的扩展程序\"，选择 chromevideo 文件夹\n\n完全关闭所有 DeepSeek 标签页，重新打开 https://chat.deepseek.com/\n\n再次检查 Console 是否有 [Content Script] 日志\n\n📌 请反馈\n\n完成以上检查后，告诉我：\n\n后端是否有 [WS] Extension registered？\n\nDeepSeek 页面的 Console 中是否有 [Content Script] 日志？\n\nService Worker 控制台是否有错误？\n\n这样我就能精确定位问题所在了。"
+  },
+  {
+    "id": "1775900332534-g27za",
+    "prompt": "测试输入内容测试输入内容",
+    "options": {},
+    "status": "failed",
+    "createdAt": "2026-04-11T09:38:52.534Z",
+    "updatedAt": "2026-04-11T09:38:53.097Z",
+    "error": "Could not establish connection. Receiving end does not exist."
+  },
+  {
+    "id": "1775918151744-m5kgo",
+    "prompt": "[自动进化任务] DOM选择器失效修复\n\n系统检测到DOM选择器失效：\n- 错误类型: dom_selector_not_found\n- 错误信息: DOM selector \".video-item\" not found\n- 选择器: .video-item\n- 页面上下文: video list extraction\n- 页面URL: https://example.com/videos\n\n请分析选择器失效的原因（可能是页面结构变化），并提供修复方案。考虑：\n1. 更新选择器以适应新的页面结构\n2. 添加备用选择器或回退机制\n3. 优化元素查找逻辑\n4. 添加更好的错误处理和重试机制\n\n请使用evolve_extension动作更新content.js或相关文件。\n\n## 诊断分析\n系统诊断报告：\n- 主要可能原因: 选择器语法错误\n- 严重程度: high\n- 置信度: 90.0%\n- 其他可能原因:\n  * 选择器语法错误\n  * 元素尚未加载\n  * 页面结构变更\n\n## 修复建议\n立即行动:\n- 手动验证选择器\n- 检查页面结构\n- 查看控制台错误\n\n短期修复:\n- 更新选择器\n- 添加备用选择器\n- 实现元素等待机制\n\n## 进化策略建议\n- 推荐动作: evolve_extension\n- 关注领域: DOM选择器, 元素查找逻辑, 备用选择器\n- 风险等级: low\n- 预估工作量: 低\n\n\n## 智能进化指引\n请根据以上分析，使用合适的进化动作修复问题。确保：\n1. 代码语法正确且通过验证\n2. 修改范围控制在必要的最小集合\n3. 保持向后兼容性\n4. 添加适当的错误处理和日志\n5. 如果涉及关键系统文件，优先考虑低风险方案\n",
+    "options": {
+      "autoEvolve": true,
+      "skipSystemInstruction": false,
+      "maxRounds": 5,
+      "priority": 1,
+      "evolutionRequest": {
+        "id": "evolve-1775918151743-8m2ci",
+        "errorType": "dom_selector_not_found",
+        "errorMessage": "DOM selector \".video-item\" not found",
+        "location": "https://example.com/videos",
+        "timestamp": "2026-04-11T14:35:51.700Z",
+        "details": {
+          "selector": ".video-item",
+          "url": "https://example.com/videos",
+          "context": "video list extraction"
+        },
+        "diagnosis": {
+          "errorId": "diagnosis-1775918151742-kxxkb",
+          "errorType": "dom_selector_not_found",
+          "errorMessage": "DOM selector \".video-item\" not found",
+          "location": "https://example.com/videos",
+          "timestamp": "2026-04-11T14:35:51.740Z",
+          "details": {
+            "selector": ".video-item",
+            "url": "https://example.com/videos",
+            "context": "video list extraction"
+          },
+          "analysis": {
+            "rootCauses": [
+              "选择器语法错误",
+              "元素尚未加载",
+              "页面结构变更",
+              "页面结构变化",
+              "选择器过时"
+            ],
+            "mostLikelyCause": "选择器语法错误",
+            "confidence": 0.8999999999999999,
+            "patterns": []
+          },
+          "severity": {
+            "functional": "high",
+            "performance": "low",
+            "userExperience": "medium",
+            "systemStability": "low",
+            "score": 2,
+            "level": "high"
+          },
+          "impact": {
+            "functional": "high",
+            "performance": "low",
+            "userExperience": "medium",
+            "systemStability": "low"
+          },
+          "suggestions": {
+            "immediate": [
+              "手动验证选择器",
+              "检查页面结构",
+              "查看控制台错误",
+              "检查选择器: .video-item",
+              "访问URL验证: https://example.com/videos"
+            ],
+            "shortTerm": [
+              "更新选择器",
+              "添加备用选择器",
+              "实现元素等待机制",
+              "更新选择器或添加备用选择器"
+            ],
+            "longTerm": [
+              "测试不同页面状态",
+              "验证元素查找",
+              "模拟页面变化"
+            ]
+          },
+          "recommendations": [
+            {
+              "priority": "P0",
+              "action": "立即修复",
+              "timeline": "24小时内",
+              "resources": [
+                "核心开发人员",
+                "系统管理员"
+              ],
+              "description": "高优先级错误，需要立即关注和修复"
+            },
+            {
+              "priority": "P2",
+              "action": "建立选择器测试",
+              "timeline": "1周内",
+              "resources": [
+                "测试团队"
+              ],
+              "description": "创建DOM选择器测试套件，防止类似问题"
+            }
+          ],
+          "metadata": {
+            "analyzedAt": "2026-04-11T14:35:51.740Z",
+            "analysisVersion": "1.0",
+            "dataSources": [
+              "selector",
+              "url",
+              "context"
+            ]
+          }
+        },
+        "advice": {
+          "suggestedActions": [
+            "evolve_extension"
+          ],
+          "focusAreas": [
+            "DOM选择器",
+            "元素查找逻辑",
+            "备用选择器"
+          ],
+          "riskLevel": "low",
+          "estimatedEffort": "低"
+        }
+      }
+    },
+    "status": "failed",
+    "createdAt": "2026-04-11T14:35:51.744Z",
+    "updatedAt": "2026-04-11T16:29:49.346Z",
+    "error": "Textarea not found on page"
+  },
+  {
+    "id": "1775919402268-nmufe",
+    "prompt": "[自动进化任务] DOM选择器失效修复\n\n系统检测到DOM选择器失效：\n- 错误类型: dom_selector_not_found\n- 错误信息: DOM selector \".video-item\" not found\n- 选择器: .video-item\n- 页面上下文: video list extraction\n- 页面URL: https://example.com/videos\n\n请分析选择器失效的原因（可能是页面结构变化），并提供修复方案。考虑：\n1. 更新选择器以适应新的页面结构\n2. 添加备用选择器或回退机制\n3. 优化元素查找逻辑\n4. 添加更好的错误处理和重试机制\n\n请使用evolve_extension动作更新content.js或相关文件。\n\n## 诊断分析\n系统诊断报告：\n- 主要可能原因: 选择器语法错误\n- 严重程度: high\n- 置信度: 90.0%\n- 其他可能原因:\n  * 选择器语法错误\n  * 元素尚未加载\n  * 页面结构变更\n\n## 修复建议\n立即行动:\n- 手动验证选择器\n- 检查页面结构\n- 查看控制台错误\n\n短期修复:\n- 更新选择器\n- 添加备用选择器\n- 实现元素等待机制\n\n## 进化策略建议\n- 推荐动作: evolve_extension\n- 关注领域: DOM选择器, 元素查找逻辑, 备用选择器\n- 风险等级: low\n- 预估工作量: 低\n\n\n## 智能进化指引\n请根据以上分析，使用合适的进化动作修复问题。确保：\n1. 代码语法正确且通过验证\n2. 修改范围控制在必要的最小集合\n3. 保持向后兼容性\n4. 添加适当的错误处理和日志\n5. 如果涉及关键系统文件，优先考虑低风险方案\n",
+    "options": {
+      "autoEvolve": true,
+      "skipSystemInstruction": false,
+      "maxRounds": 5,
+      "priority": 1,
+      "evolutionRequest": {
+        "id": "evolve-1775919402267-3pgad",
+        "errorType": "dom_selector_not_found",
+        "errorMessage": "DOM selector \".video-item\" not found",
+        "location": "https://example.com/videos",
+        "timestamp": "2026-04-11T14:56:42.192Z",
+        "details": {
+          "selector": ".video-item",
+          "url": "https://example.com/videos",
+          "context": "video list extraction"
+        },
+        "diagnosis": {
+          "errorId": "diagnosis-1775919402267-7gpfb",
+          "errorType": "dom_selector_not_found",
+          "errorMessage": "DOM selector \".video-item\" not found",
+          "location": "https://example.com/videos",
+          "timestamp": "2026-04-11T14:56:42.265Z",
+          "details": {
+            "selector": ".video-item",
+            "url": "https://example.com/videos",
+            "context": "video list extraction"
+          },
+          "analysis": {
+            "rootCauses": [
+              "选择器语法错误",
+              "元素尚未加载",
+              "页面结构变更",
+              "页面结构变化",
+              "选择器过时"
+            ],
+            "mostLikelyCause": "选择器语法错误",
+            "confidence": 0.8999999999999999,
+            "patterns": []
+          },
+          "severity": {
+            "functional": "high",
+            "performance": "low",
+            "userExperience": "medium",
+            "systemStability": "low",
+            "score": 2,
+            "level": "high"
+          },
+          "impact": {
+            "functional": "high",
+            "performance": "low",
+            "userExperience": "medium",
+            "systemStability": "low"
+          },
+          "suggestions": {
+            "immediate": [
+              "手动验证选择器",
+              "检查页面结构",
+              "查看控制台错误",
+              "检查选择器: .video-item",
+              "访问URL验证: https://example.com/videos"
+            ],
+            "shortTerm": [
+              "更新选择器",
+              "添加备用选择器",
+              "实现元素等待机制",
+              "更新选择器或添加备用选择器"
+            ],
+            "longTerm": [
+              "测试不同页面状态",
+              "验证元素查找",
+              "模拟页面变化"
+            ]
+          },
+          "recommendations": [
+            {
+              "priority": "P0",
+              "action": "立即修复",
+              "timeline": "24小时内",
+              "resources": [
+                "核心开发人员",
+                "系统管理员"
+              ],
+              "description": "高优先级错误，需要立即关注和修复"
+            },
+            {
+              "priority": "P2",
+              "action": "建立选择器测试",
+              "timeline": "1周内",
+              "resources": [
+                "测试团队"
+              ],
+              "description": "创建DOM选择器测试套件，防止类似问题"
+            }
+          ],
+          "metadata": {
+            "analyzedAt": "2026-04-11T14:56:42.265Z",
+            "analysisVersion": "1.0",
+            "dataSources": [
+              "selector",
+              "url",
+              "context"
+            ]
+          }
+        },
+        "advice": {
+          "suggestedActions": [
+            "evolve_extension"
+          ],
+          "focusAreas": [
+            "DOM选择器",
+            "元素查找逻辑",
+            "备用选择器"
+          ],
+          "riskLevel": "low",
+          "estimatedEffort": "低"
+        }
+      }
+    },
+    "status": "failed",
+    "createdAt": "2026-04-11T14:56:42.268Z",
+    "updatedAt": "2026-04-11T16:29:49.865Z",
+    "error": "Textarea not found on page"
+  },
+  {
+    "id": "1775919587798-pbb5u",
+    "prompt": "[自动进化任务] DOM选择器失效修复\n\n系统检测到DOM选择器失效：\n- 错误类型: dom_selector_not_found\n- 错误信息: DOM selector \".video-item\" not found\n- 选择器: .video-item\n- 页面上下文: video list extraction\n- 页面URL: https://example.com/videos\n\n请分析选择器失效的原因（可能是页面结构变化），并提供修复方案。考虑：\n1. 更新选择器以适应新的页面结构\n2. 添加备用选择器或回退机制\n3. 优化元素查找逻辑\n4. 添加更好的错误处理和重试机制\n\n请使用evolve_extension动作更新content.js或相关文件。\n\n## 诊断分析\n系统诊断报告：\n- 主要可能原因: 选择器语法错误\n- 严重程度: high\n- 置信度: 90.0%\n- 其他可能原因:\n  * 选择器语法错误\n  * 元素尚未加载\n  * 页面结构变更\n\n## 修复建议\n立即行动:\n- 手动验证选择器\n- 检查页面结构\n- 查看控制台错误\n\n短期修复:\n- 更新选择器\n- 添加备用选择器\n- 实现元素等待机制\n\n## 进化策略建议\n- 推荐动作: evolve_extension\n- 关注领域: DOM选择器, 元素查找逻辑, 备用选择器\n- 风险等级: low\n- 预估工作量: 低\n\n\n## 智能进化指引\n请根据以上分析，使用合适的进化动作修复问题。确保：\n1. 代码语法正确且通过验证\n2. 修改范围控制在必要的最小集合\n3. 保持向后兼容性\n4. 添加适当的错误处理和日志\n5. 如果涉及关键系统文件，优先考虑低风险方案\n",
+    "options": {
+      "autoEvolve": true,
+      "skipSystemInstruction": false,
+      "maxRounds": 5,
+      "priority": 1,
+      "evolutionRequest": {
+        "id": "evolve-1775919587797-chcpf",
+        "errorType": "dom_selector_not_found",
+        "errorMessage": "DOM selector \".video-item\" not found",
+        "location": "https://example.com/videos",
+        "timestamp": "2026-04-11T14:59:47.726Z",
+        "details": {
+          "selector": ".video-item",
+          "url": "https://example.com/videos",
+          "context": "video list extraction"
+        },
+        "diagnosis": {
+          "errorId": "diagnosis-1775919587797-c9ss7",
+          "errorType": "dom_selector_not_found",
+          "errorMessage": "DOM selector \".video-item\" not found",
+          "location": "https://example.com/videos",
+          "timestamp": "2026-04-11T14:59:47.795Z",
+          "details": {
+            "selector": ".video-item",
+            "url": "https://example.com/videos",
+            "context": "video list extraction"
+          },
+          "analysis": {
+            "rootCauses": [
+              "选择器语法错误",
+              "元素尚未加载",
+              "页面结构变更",
+              "页面结构变化",
+              "选择器过时"
+            ],
+            "mostLikelyCause": "选择器语法错误",
+            "confidence": 0.8999999999999999,
+            "patterns": []
+          },
+          "severity": {
+            "functional": "high",
+            "performance": "low",
+            "userExperience": "medium",
+            "systemStability": "low",
+            "score": 2,
+            "level": "high"
+          },
+          "impact": {
+            "functional": "high",
+            "performance": "low",
+            "userExperience": "medium",
+            "systemStability": "low"
+          },
+          "suggestions": {
+            "immediate": [
+              "手动验证选择器",
+              "检查页面结构",
+              "查看控制台错误",
+              "检查选择器: .video-item",
+              "访问URL验证: https://example.com/videos"
+            ],
+            "shortTerm": [
+              "更新选择器",
+              "添加备用选择器",
+              "实现元素等待机制",
+              "更新选择器或添加备用选择器"
+            ],
+            "longTerm": [
+              "测试不同页面状态",
+              "验证元素查找",
+              "模拟页面变化"
+            ]
+          },
+          "recommendations": [
+            {
+              "priority": "P0",
+              "action": "立即修复",
+              "timeline": "24小时内",
+              "resources": [
+                "核心开发人员",
+                "系统管理员"
+              ],
+              "description": "高优先级错误，需要立即关注和修复"
+            },
+            {
+              "priority": "P2",
+              "action": "建立选择器测试",
+              "timeline": "1周内",
+              "resources": [
+                "测试团队"
+              ],
+              "description": "创建DOM选择器测试套件，防止类似问题"
+            }
+          ],
+          "metadata": {
+            "analyzedAt": "2026-04-11T14:59:47.795Z",
+            "analysisVersion": "1.0",
+            "dataSources": [
+              "selector",
+              "url",
+              "context"
+            ]
+          }
+        },
+        "advice": {
+          "suggestedActions": [
+            "evolve_extension"
+          ],
+          "focusAreas": [
+            "DOM选择器",
+            "元素查找逻辑",
+            "备用选择器"
+          ],
+          "riskLevel": "low",
+          "estimatedEffort": "低"
+        }
+      }
+    },
+    "status": "failed",
+    "createdAt": "2026-04-11T14:59:47.798Z",
+    "updatedAt": "2026-04-11T16:29:50.389Z",
+    "error": "Textarea not found on page"
+  },
+  {
+    "id": "1775930340134-k234j",
+    "prompt": "[自动进化任务] DOM选择器失效修复\n\n系统检测到DOM选择器失效：\n- 错误类型: dom_selector_not_found\n- 错误信息: DOM selector \".video-item\" not found\n- 选择器: .video-item\n- 页面上下文: video list extraction\n- 页面URL: https://example.com/videos\n\n请分析选择器失效的原因（可能是页面结构变化），并提供修复方案。考虑：\n1. 更新选择器以适应新的页面结构\n2. 添加备用选择器或回退机制\n3. 优化元素查找逻辑\n4. 添加更好的错误处理和重试机制\n\n请使用evolve_extension动作更新content.js或相关文件。\n\n## 诊断分析\n系统诊断报告：\n- 主要可能原因: 选择器语法错误\n- 严重程度: high\n- 置信度: 90.0%\n- 其他可能原因:\n  * 选择器语法错误\n  * 元素尚未加载\n  * 页面结构变更\n\n## 修复建议\n立即行动:\n- 手动验证选择器\n- 检查页面结构\n- 查看控制台错误\n\n短期修复:\n- 更新选择器\n- 添加备用选择器\n- 实现元素等待机制\n\n## 进化策略建议\n- 推荐动作: evolve_extension\n- 关注领域: DOM选择器, 元素查找逻辑, 备用选择器\n- 风险等级: low\n- 预估工作量: 低\n\n\n## 智能进化指引\n请根据以上分析，使用合适的进化动作修复问题。确保：\n1. 代码语法正确且通过验证\n2. 修改范围控制在必要的最小集合\n3. 保持向后兼容性\n4. 添加适当的错误处理和日志\n5. 如果涉及关键系统文件，优先考虑低风险方案\n",
+    "options": {
+      "autoEvolve": true,
+      "skipSystemInstruction": false,
+      "maxRounds": 5,
+      "priority": 1,
+      "evolutionRequest": {
+        "id": "evolve-1775930340134-2hvu2",
+        "errorType": "dom_selector_not_found",
+        "errorMessage": "DOM selector \".video-item\" not found",
+        "location": "https://example.com/videos",
+        "timestamp": "2026-04-11T17:59:00.057Z",
+        "details": {
+          "selector": ".video-item",
+          "url": "https://example.com/videos",
+          "context": "video list extraction"
+        },
+        "diagnosis": {
+          "errorId": "diagnosis-1775930340134-tkrv9",
+          "errorType": "dom_selector_not_found",
+          "errorMessage": "DOM selector \".video-item\" not found",
+          "location": "https://example.com/videos",
+          "timestamp": "2026-04-11T17:59:00.133Z",
+          "details": {
+            "selector": ".video-item",
+            "url": "https://example.com/videos",
+            "context": "video list extraction"
+          },
+          "analysis": {
+            "rootCauses": [
+              "选择器语法错误",
+              "元素尚未加载",
+              "页面结构变更",
+              "页面结构变化",
+              "选择器过时"
+            ],
+            "mostLikelyCause": "选择器语法错误",
+            "confidence": 0.8999999999999999,
+            "patterns": []
+          },
+          "severity": {
+            "functional": "high",
+            "performance": "low",
+            "userExperience": "medium",
+            "systemStability": "low",
+            "score": 2,
+            "level": "high"
+          },
+          "impact": {
+            "functional": "high",
+            "performance": "low",
+            "userExperience": "medium",
+            "systemStability": "low"
+          },
+          "suggestions": {
+            "immediate": [
+              "手动验证选择器",
+              "检查页面结构",
+              "查看控制台错误",
+              "检查选择器: .video-item",
+              "访问URL验证: https://example.com/videos"
+            ],
+            "shortTerm": [
+              "更新选择器",
+              "添加备用选择器",
+              "实现元素等待机制",
+              "更新选择器或添加备用选择器"
+            ],
+            "longTerm": [
+              "测试不同页面状态",
+              "验证元素查找",
+              "模拟页面变化"
+            ]
+          },
+          "recommendations": [
+            {
+              "priority": "P0",
+              "action": "立即修复",
+              "timeline": "24小时内",
+              "resources": [
+                "核心开发人员",
+                "系统管理员"
+              ],
+              "description": "高优先级错误，需要立即关注和修复"
+            },
+            {
+              "priority": "P2",
+              "action": "建立选择器测试",
+              "timeline": "1周内",
+              "resources": [
+                "测试团队"
+              ],
+              "description": "创建DOM选择器测试套件，防止类似问题"
+            }
+          ],
+          "metadata": {
+            "analyzedAt": "2026-04-11T17:59:00.133Z",
+            "analysisVersion": "1.0",
+            "dataSources": [
+              "selector",
+              "url",
+              "context"
+            ]
+          }
+        },
+        "advice": {
+          "suggestedActions": [
+            "evolve_extension"
+          ],
+          "focusAreas": [
+            "DOM选择器",
+            "元素查找逻辑",
+            "备用选择器"
+          ],
+          "riskLevel": "low",
+          "estimatedEffort": "低"
+        }
+      }
+    },
+    "status": "failed",
+    "createdAt": "2026-04-11T17:59:00.134Z",
+    "updatedAt": "2026-04-11T17:59:00.658Z",
+    "error": "Could not establish connection. Receiving end does not exist."
   }
 ]

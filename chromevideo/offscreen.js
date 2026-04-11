@@ -1,5 +1,13 @@
 // /workspace/chromevideo/offscreen.js
 
+// 导入自动进化监控模块
+try {
+  importScripts('auto-evolve-monitor.js');
+  console.log('[Offscreen] Auto-evolve monitor loaded');
+} catch (error) {
+  console.error('[Offscreen] Failed to load auto-evolve monitor:', error);
+}
+
 let ws;
 const WS_URL = 'ws://localhost:8080';
 let reconnectInterval;
@@ -7,7 +15,12 @@ let reconnectInterval;
 function connect() {
   console.log('[Offscreen] Attempting to connect to WS...');
   ws = new WebSocket(WS_URL);
-  
+
+  // 监控WebSocket连接错误
+  if (typeof autoEvolveMonitor !== 'undefined' && autoEvolveMonitor.monitorWebSocket) {
+    autoEvolveMonitor.monitorWebSocket(ws);
+  }
+
   ws.onopen = () => {
     console.log('[Offscreen] Connected to Queue-Server');
     ws.send(JSON.stringify({ type: 'register', clientType: 'extension' }));
@@ -58,12 +71,12 @@ connect();
 
 // Receive messages from Service Worker (like task updates) and forward to server
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
-  if (msg.type === 'task_update') {
+  if (msg.type === 'task_update' || msg.type === 'auto_evolve') {
     if (ws && ws.readyState === WebSocket.OPEN) {
-      console.log('[Offscreen] Forwarding task update to server:', msg);
+      console.log(`[Offscreen] Forwarding ${msg.type} to server:`, msg);
       ws.send(JSON.stringify(msg));
     } else {
-      console.warn('[Offscreen] Cannot forward task update, WS disconnected');
+      console.warn(`[Offscreen] Cannot forward ${msg.type}, WS disconnected`);
     }
   }
 });

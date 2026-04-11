@@ -1,0 +1,141 @@
+{
+  "version": "1.0",
+  "lastUpdated": "2026-04-11T18:29:25.537Z",
+  "history": [
+    {
+      "id": "evolve-1775918151743-8m2ci",
+      "timestamp": "2026-04-11T14:35:51.700Z",
+      "errorType": "dom_selector_not_found",
+      "actionType": "auto_evolve",
+      "status": "pending",
+      "priority": 1,
+      "riskLevel": "low",
+      "details": {
+        "selector": ".video-item",
+        "url": "https://example.com/videos",
+        "context": "video list extraction"
+      },
+      "result": null,
+      "error": null,
+      "metadata": {
+        "recordedAt": "2026-04-11T14:35:51.744Z",
+        "systemVersion": "v22.22.1"
+      }
+    },
+    {
+      "id": "evolve-1775919587797-chcpf",
+      "timestamp": "2026-04-11T14:59:47.726Z",
+      "errorType": "dom_selector_not_found",
+      "actionType": "auto_evolve",
+      "status": "pending",
+      "priority": 1,
+      "riskLevel": "low",
+      "details": {
+        "selector": ".video-item",
+        "url": "https://example.com/videos",
+        "context": "video list extraction"
+      },
+      "result": null,
+      "error": null,
+      "metadata": {
+        "recordedAt": "2026-04-11T14:59:47.797Z",
+        "systemVersion": "v22.22.1"
+      }
+    },
+    {
+      "id": "evolve-1775930340134-2hvu2",
+      "timestamp": "2026-04-11T17:59:00.057Z",
+      "errorType": "dom_selector_not_found",
+      "actionType": "auto_evolve",
+      "status": "pending",
+      "priority": 1,
+      "riskLevel": "low",
+      "details": {
+        "selector": ".video-item",
+        "url": "https://example.com/videos",
+        "context": "video list extraction"
+      },
+      "result": null,
+      "error": null,
+      "metadata": {
+        "recordedAt": "2026-04-11T17:59:00.134Z",
+        "systemVersion": "v22.22.1"
+      }
+    }
+  ],
+  "stats": {
+    "totalEvolutions": 3,
+    "successfulEvolutions": 0,
+    "failedEvolutions": 0,
+    "byErrorType": {
+      "dom_selector_not_found": {
+        "total": 3,
+        "success": 0,
+        "fail": 0
+      }
+    },
+    "byActionType": {
+      "auto_evolve": {
+        "total": 3,
+        "success": 0,
+        "fail": 0
+      }
+    },
+    "byDay": {
+      "2026-04-11": {
+        "total": 3,
+        "success": 0,
+        "fail": 0
+      }
+    },
+    "byHour": {
+      "1": {
+        "total": 1,
+        "success": 0,
+        "fail": 0
+      },
+      "22": {
+        "total": 2,
+        "success": 0,
+        "fail": 0
+      }
+    }
+  },
+  "lastAnalysis": {
+    "timestamp": 1775930340134,
+    "windowSize": 0,
+    "trends": {
+      "successRate": null,
+      "errorTypeDistribution": {},
+      "efficiency": null
+    }
+  },
+  "trends": {
+    "successRate": null,
+    "errorTypeDistribution": {},
+    "efficiency": null
+  },
+  "config": {
+    "storage": {
+      "dataDir": "E:\\workspace\\free-chat-coder\\queue-server\\data",
+      "historyFile": "evolution-history.json",
+      "maxFileSize": 10485760,
+      "backupCount": 5,
+      "autoSaveInterval": 300000
+    },
+    "analysis": {
+      "trendWindow": 604800000,
+      "successThreshold": 0.7,
+      "minSamplesForAnalysis": 5,
+      "retentionPeriod": 2592000000
+    },
+    "reporting": {
+      "dailyReportTime": "09:00",
+      "weeklyReportDay": 1,
+      "reportFormats": [
+        "json",
+        "markdown"
+      ]
+    }
+  }
+}

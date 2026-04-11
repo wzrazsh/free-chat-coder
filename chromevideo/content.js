@@ -2,6 +2,42 @@
 
 console.log('[Content Script] Injected on DeepSeek page.');
 
+// 内容脚本错误监控
+function reportContentScriptError(errorType, details) {
+  try {
+    chrome.runtime.sendMessage({
+      type: 'content_script_error',
+      errorType: errorType,
+      details: details,
+      timestamp: new Date().toISOString(),
+      url: window.location.href
+    }, (response) => {
+      if (chrome.runtime.lastError) {
+        console.warn('[Content Script] Failed to report error:', chrome.runtime.lastError);
+      } else {
+        console.log('[Content Script] Error reported:', errorType);
+      }
+    });
+  } catch (error) {
+    console.error('[Content Script] Error reporting failed:', error);
+  }
+}
+
+// DOM选择器监控包装器
+function monitorSelectorQuery(selector, context) {
+  const element = document.querySelector(selector);
+  if (!element && selector && context) {
+    // 报告DOM选择器失败
+    reportContentScriptError('dom_selector_not_found', {
+      selector: selector,
+      context: context,
+      url: window.location.href,
+      timestamp: new Date().toISOString()
+    });
+  }
+  return element;
+}
+
 function randomInt(min, max) {
   return Math.floor(Math.random() * (max - min + 1)) + min;
 }
@@ -44,8 +80,9 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     
     // Find the textarea
     // DeepSeek uses an editable div/textarea with specific IDs or generic selectors
-    const input = document.querySelector('textarea') || document.querySelector('#chat-input');
-    
+    const input = monitorSelectorQuery('textarea', 'Find textarea for prompt input') ||
+                  monitorSelectorQuery('#chat-input', 'Find chat input by ID');
+
     if (input) {
       // Execute simulated typing asynchronously
       (async () => {
@@ -88,6 +125,21 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
               .catch(err => sendResponse({ success: false, error: err.message }));
               
           } else {
+            // 上报发送按钮未找到错误
+            reportContentScriptError('element_interaction_failed', {
+              selector: 'send button (various selectors attempted)',
+              context: 'Find and click send button after typing',
+              interaction: 'click',
+              attemptedSelectors: [
+                'div[role="button"] with SVG',
+                'button[aria-label="Send"]',
+                'div.ds-icon-button',
+                '.send-button',
+                'input.nextElementSibling'
+              ],
+              url: window.location.href,
+              timestamp: new Date().toISOString()
+            });
             sendResponse({ success: false, error: 'Send button not found' });
           }
         } catch (error) {
@@ -98,6 +150,14 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       // Keep channel open for async response
       return true;
     } else {
+      // 上报textarea未找到错误
+      reportContentScriptError('dom_selector_not_found', {
+        selector: 'textarea or #chat-input',
+        context: 'Find input for prompt submission',
+        url: window.location.href,
+        timestamp: new Date().toISOString(),
+        attemptedSelectors: ['textarea', '#chat-input']
+      });
       sendResponse({ success: false, error: 'Textarea not found on page' });
     }
   }
@@ -139,6 +199,19 @@ function waitForReply() {
       // Timeout after 2 minutes
       setTimeout(() => {
         clearInterval(pollInterval);
+        // 上报等待回复超时错误
+        try {
+          reportContentScriptError('page_load_timeout', {
+            timeout: 120000,
+            phase: 'waiting for AI reply',
+            url: window.location.href,
+            timestamp: new Date().toISOString(),
+            selectorAttempted: '.ds-markdown, .markdown-body',
+            currentBlocks: document.querySelectorAll('.ds-markdown, .markdown-body').length
+          });
+        } catch (reportError) {
+          console.error('[Content Script] Failed to report timeout error:', reportError);
+        }
         reject(new Error('Timeout waiting for reply'));
       }, 120000);
       

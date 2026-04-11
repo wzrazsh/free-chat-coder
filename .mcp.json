@@ -1,0 +1,19 @@
+{
+  "mcpServers": {
+    "Playwright": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@playwright/mcp@latest",
+        "--config",
+        "E:\\workspace\\free-chat-coder\\.playwright-mcp-config.json"
+      ]
+    },
+    "omc": {
+      "command": "node",
+      "args": [
+        "D:/ProgramData/npm/node_modules/oh-my-claude-sisyphus/bridge/mcp-server.cjs"
+      ]
+    }
+  }
+}

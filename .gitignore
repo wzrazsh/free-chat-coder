@@ -1,1 +1,14 @@
-queue-server/node_modules/
+node_modules/
+.claude
+.browser-profile
+.playwright-mcp
+.omc
+.history
+test*.js
+*.log
+*.ttf
+*.pdf
+*.backup
+extensions_snapshot
+service_worker_check
+generate_pdf.py
