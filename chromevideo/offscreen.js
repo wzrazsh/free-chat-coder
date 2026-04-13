@@ -1,12 +1,7 @@
 // /workspace/chromevideo/offscreen.js
 
-// 导入自动进化监控模块
-try {
-  importScripts('auto-evolve-monitor.js');
-  console.log('[Offscreen] Auto-evolve monitor loaded');
-} catch (error) {
-  console.error('[Offscreen] Failed to load auto-evolve monitor:', error);
-}
+// 自动进化监控模块已在 offscreen.html 中通过 <script> 标签加载
+console.log('[Offscreen] Auto-evolve monitor should be loaded via HTML');
 
 let ws;
 const WS_URL = 'ws://localhost:8080';

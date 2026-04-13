@@ -179,7 +179,7 @@ function App() {
             <p className="text-gray-500 text-center py-8">No tasks in queue. Add one above!</p>
           ) : (
             <div className="space-y-4">
-              {tasks.map((task) => (
+              {[...tasks].sort((a, b) => b.createdAt - a.createdAt).map((task) => (
                 <div key={task.id} className="flex items-center justify-between p-4 border border-gray-100 rounded-lg hover:bg-gray-50 transition-colors">
                   <div className="flex items-center gap-4">
                     {getStatusIcon(task.status)}

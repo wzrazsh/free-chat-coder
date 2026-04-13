@@ -12,3 +12,4 @@ test*.js
 extensions_snapshot
 service_worker_check
 generate_pdf.py
+.github

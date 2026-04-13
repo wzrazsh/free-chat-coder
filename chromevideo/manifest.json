@@ -6,8 +6,13 @@
     "offscreen",
     "storage",
     "scripting",
-    "webNavigation"
+    "webNavigation",
+    "nativeMessaging"
   ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "Control Servers"
+  },
   "host_permissions": [
     "https://chat.deepseek.com/*",
     "http://localhost:8080/*"

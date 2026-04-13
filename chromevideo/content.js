@@ -166,55 +166,71 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 function waitForReply() {
   return new Promise((resolve, reject) => {
     console.log('[Content Script] Waiting for reply...');
-    // Simplify for MVP: Just poll for new message bubbles or wait for a specific time
-    // DeepSeek reply text is usually inside a div with class like "ds-markdown"
     
-    // 1. Wait a bit for the user message to appear and bot to start typing
+    const INITIAL_WAIT = 3000;
+    const POLL_INTERVAL = 500;
+    const STABLE_THRESHOLD = 6;
+    const TIMEOUT_MS = 180000;
+    
     setTimeout(() => {
       let lastText = '';
       let identicalCount = 0;
+      let pollTimer;
+      let timeoutTimer;
       
-      const pollInterval = setInterval(() => {
-        // Find the last markdown block
+      function cleanup() {
+        clearInterval(pollTimer);
+        clearTimeout(timeoutTimer);
+      }
+      
+      pollTimer = setInterval(() => {
         const messageBlocks = document.querySelectorAll('.ds-markdown, .markdown-body');
         if (messageBlocks.length === 0) return;
         
         const lastBlock = messageBlocks[messageBlocks.length - 1];
         const currentText = lastBlock.innerText || lastBlock.textContent;
         
-        if (currentText && currentText === lastText) {
+        if (!currentText) return;
+        
+        if (currentText === lastText) {
           identicalCount++;
-          // If text hasn't changed for 10 iterations (5 seconds), assume generation complete
-          if (identicalCount >= 10) {
-            clearInterval(pollInterval);
+          if (identicalCount >= STABLE_THRESHOLD) {
+            cleanup();
             console.log('[Content Script] Reply generation finished.');
             resolve(currentText);
           }
         } else {
           lastText = currentText;
-          identicalCount = 0; // reset count if text is still changing
+          identicalCount = 0;
         }
-      }, 500);
+      }, POLL_INTERVAL);
       
-      // Timeout after 2 minutes
-      setTimeout(() => {
-        clearInterval(pollInterval);
-        // 上报等待回复超时错误
-        try {
-          reportContentScriptError('page_load_timeout', {
-            timeout: 120000,
-            phase: 'waiting for AI reply',
-            url: window.location.href,
-            timestamp: new Date().toISOString(),
-            selectorAttempted: '.ds-markdown, .markdown-body',
-            currentBlocks: document.querySelectorAll('.ds-markdown, .markdown-body').length
-          });
-        } catch (reportError) {
-          console.error('[Content Script] Failed to report timeout error:', reportError);
+      timeoutTimer = setTimeout(() => {
+        cleanup();
+        const messageBlocks = document.querySelectorAll('.ds-markdown, .markdown-body');
+        const lastBlock = messageBlocks.length > 0 ? messageBlocks[messageBlocks.length - 1] : null;
+        const partialText = lastBlock ? (lastBlock.innerText || lastBlock.textContent) : '';
+        
+        if (partialText && partialText.length > 50) {
+          console.log('[Content Script] Timeout but partial reply found, returning it.');
+          resolve(partialText);
+        } else {
+          try {
+            reportContentScriptError('page_load_timeout', {
+              timeout: TIMEOUT_MS,
+              phase: 'waiting for AI reply',
+              url: window.location.href,
+              timestamp: new Date().toISOString(),
+              selectorAttempted: '.ds-markdown, .markdown-body',
+              currentBlocks: messageBlocks.length
+            });
+          } catch (reportError) {
+            console.error('[Content Script] Failed to report timeout error:', reportError);
+          }
+          reject(new Error('Timeout waiting for reply'));
         }
-        reject(new Error('Timeout waiting for reply'));
-      }, 120000);
+      }, TIMEOUT_MS);
       
-    }, 2000);
+    }, INITIAL_WAIT);
   });
 }

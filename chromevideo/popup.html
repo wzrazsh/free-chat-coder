@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <style>
+    body { width: 280px; padding: 10px; font-family: system-ui, -apple-system, sans-serif; }
+    h3 { margin-top: 0; font-size: 16px; color: #333; }
+    .server-group { margin-bottom: 15px; border: 1px solid #e5e7eb; padding: 12px; border-radius: 6px; background-color: #f9fafb; }
+    .server-group h4 { margin: 0 0 10px; font-size: 14px; color: #374151; }
+    .btn { display: inline-block; padding: 6px 12px; margin-right: 5px; border: none; border-radius: 4px; cursor: pointer; font-size: 12px; font-weight: 500; transition: opacity 0.2s; }
+    .btn:hover { opacity: 0.9; }
+    .btn-start { background-color: #10a37f; color: white; }
+    .btn-stop { background-color: #ef4444; color: white; }
+    .btn-link { background-color: #3b82f6; color: white; }
+    .status-container { display: flex; align-items: center; margin-top: 10px; font-size: 12px; color: #6b7280; }
+    .status-dot { width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; background-color: #9ca3af; }
+    .status-dot.running { background-color: #10a37f; box-shadow: 0 0 4px #10a37f; }
+    .status-dot.stopped { background-color: #ef4444; }
+    .error-msg { color: #ef4444; font-size: 12px; margin-top: 10px; word-break: break-all; }
+    .setup-hint { font-size: 12px; color: #6b7280; margin-top: 10px; padding: 8px; background: #fffbeb; border: 1px solid #fef3c7; border-radius: 4px; }
+  </style>
+</head>
+<body>
+  <h3>🚀 SOLO Coder Servers</h3>
+  
+  <div class="server-group">
+    <h4>Queue Server (Port 8080)</h4>
+    <button class="btn btn-start" id="start-queue">Start</button>
+    <button class="btn btn-stop" id="stop-queue">Stop</button>
+    <div class="status-container">
+      <div class="status-dot" id="dot-queue"></div>
+      <span id="status-queue">Checking...</span>
+    </div>
+  </div>
+
+  <div class="server-group">
+    <h4>Web Console (Vite)</h4>
+    <button class="btn btn-start" id="start-web">Start</button>
+    <button class="btn btn-stop" id="stop-web">Stop</button>
+    <button class="btn btn-link" id="link-web">Open 5173</button>
+    <div class="status-container">
+      <div class="status-dot" id="dot-web"></div>
+      <span id="status-web">Checking...</span>
+    </div>
+  </div>
+
+  <div class="server-group">
+    <h4>DeepSeek Agent</h4>
+    <button class="btn btn-link" id="link-deepseek">Open DeepSeek Chat</button>
+  </div>
+
+  <div id="error" class="error-msg"></div>
+  <div id="setup-hint" class="setup-hint" style="display: none;">
+    <b>Setup Required:</b><br>
+    Please go to <code>chromevideo/host</code> directory and run <code>install_host.js</code> using Node to install the Native Messaging Host for Chrome.
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>

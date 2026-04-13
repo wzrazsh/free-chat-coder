@@ -103,13 +103,19 @@ class AutoEvolveManager {
     }
 
     // 检查相同错误冷却期
-    const sameErrorEvolves = recentEvolves.filter(req => req.errorType === errorType);
+    const sameErrorEvolves = Array.from(this.evolutionHistory.values())
+      .filter(req => req.errorType === errorType)
+      .sort((a, b) => b.timestamp - a.timestamp);
+      
     if (sameErrorEvolves.length > 0) {
-      return {
-        allowed: false,
-        reason: `相同错误类型 ${errorType} 处于冷却期`,
-        priority: this.getErrorPriority(errorType)
-      };
+      const lastSameErrorTime = sameErrorEvolves[0].timestamp;
+      if (now - lastSameErrorTime < EVOLUTION_STRATEGY_CONFIG.frequencyLimits.coolingPeriod) {
+        return {
+          allowed: false,
+          reason: `相同错误类型 ${errorType} 处于冷却期`,
+          priority: this.getErrorPriority(errorType)
+        };
+      }
     }
 
     // 检查最小间隔

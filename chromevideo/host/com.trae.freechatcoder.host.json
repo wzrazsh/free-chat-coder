@@ -1,0 +1,9 @@
+{
+  "name": "com.trae.freechatcoder.host",
+  "description": "SOLO Coder Local Server Host",
+  "path": "host.bat",
+  "type": "stdio",
+  "allowed_origins": [
+    "chrome-extension://fpiggepgljafdfddlpelhfdbckkbdijb/"
+  ]
+}

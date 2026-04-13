@@ -3,15 +3,15 @@ const actionEngine = require('./actions/action-engine');
 const systemPromptTemplate = require('./system-prompt/template');
 
 module.exports = {
-  /**
-   * 在发送给 DeepSeek 前处理任务 prompt
-   */
   processTask: (task) => {
-    // 根据 options 决定是否注入系统指令
     const options = task.options || {};
-    
-    // 如果是第一次发消息，或者开启了 autoEvolve，则注入系统指令
+    const currentRound = task.round || 1;
+
     if (options.skipSystemInstruction) {
+      return task.prompt;
+    }
+
+    if (currentRound > 1) {
       return task.prompt;
     }
 
@@ -130,3 +130,5 @@ module.exports = {
     }
   }
 };
+
+// [AutoEvolve Test] Loop executed at 2026-04-12T16:58:41.590Z
