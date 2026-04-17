@@ -703,6 +703,18 @@ async function checkQueueServer() {
   }
 }
 
+function getBootstrapCommandLabel(command) {
+  if (command === 'start_queue') {
+    return 'Queue Server';
+  }
+
+  if (command === 'start_web') {
+    return 'Web Console';
+  }
+
+  return command;
+}
+
 /**
  * 确保定时心跳通过 alarms API 重新唤醒 MV3 service worker。
  */
@@ -805,7 +817,7 @@ async function ensureLocalServices(reason = 'heartbeat') {
       if (failedServices.length > 0) {
         state = failedCommands.length > 0 ? 'error' : 'warning';
         message = failedCommands.length > 0
-          ? failedCommands.map((item) => `${item.command}: ${item.error || 'unknown error'}`).join(' | ')
+          ? failedCommands.map((item) => `${getBootstrapCommandLabel(item.command)}: ${item.error || 'unknown error'}`).join(' | ')
           : `${failedServices.join(' and ')} still not responding after the auto-start check.`;
       }
 

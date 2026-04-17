@@ -10,18 +10,24 @@ const QUEUE_DIR = path.join(WORKSPACE, 'queue-server');
 const WEB_DIR = path.join(WORKSPACE, 'web-console');
 const PID_FILE = path.join(__dirname, '.service-pids.json');
 const IS_WINDOWS = process.platform === 'win32';
+const DEFAULT_STARTUP_TIMEOUT_MS = 15000;
+const SERVICE_STATE_POLL_MS = 500;
 
 const SERVICES = {
   'SOLOCoder-QueueServer': {
+    displayName: 'Queue Server',
     dir: QUEUE_DIR,
     type: 'queue',
     preferredPort: sharedConfig.queueServer.preferredPort,
+    startupTimeoutMs: DEFAULT_STARTUP_TIMEOUT_MS,
     args: [path.join(QUEUE_DIR, 'node_modules', 'nodemon', 'bin', 'nodemon.js'), 'index.js']
   },
   'SOLOCoder-WebConsole': {
+    displayName: 'Web Console',
     dir: WEB_DIR,
     type: 'web',
     port: 5173,
+    startupTimeoutMs: DEFAULT_STARTUP_TIMEOUT_MS,
     args: [path.join(WEB_DIR, 'node_modules', 'vite', 'bin', 'vite.js')]
   }
 };
@@ -193,6 +199,70 @@ async function discoverQueueService(timeoutMs = 1000) {
   });
 }
 
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function getServiceRuntimeStatus(name) {
+  const service = SERVICES[name];
+  if (!service) {
+    return {
+      running: false,
+      port: null,
+      processAlive: false
+    };
+  }
+
+  if (service.type === 'queue') {
+    const queueTarget = await discoverQueueService(900);
+    return {
+      running: !!queueTarget,
+      port: queueTarget ? queueTarget.port : null,
+      processAlive: hasLiveServiceProcess(name)
+    };
+  }
+
+  const reachable = await isPortReachable(service.port);
+  return {
+    running: reachable,
+    port: service.port,
+    processAlive: reachable || !!getPidByPort(service.port) || hasLiveServiceProcess(name)
+  };
+}
+
+async function waitForServiceState(name, expectedRunning, timeoutMs = DEFAULT_STARTUP_TIMEOUT_MS) {
+  const startedAt = Date.now();
+  let lastStatus = await getServiceRuntimeStatus(name);
+
+  while (lastStatus.running !== expectedRunning && (Date.now() - startedAt) < timeoutMs) {
+    await sleep(SERVICE_STATE_POLL_MS);
+    lastStatus = await getServiceRuntimeStatus(name);
+  }
+
+  if (lastStatus.running === expectedRunning && expectedRunning) {
+    await updateRecordedListenerPid(name);
+  }
+
+  return {
+    ok: lastStatus.running === expectedRunning,
+    waitedMs: Date.now() - startedAt,
+    status: lastStatus
+  };
+}
+
+function formatServiceReadinessError(name, waitResult) {
+  const service = SERVICES[name];
+  const portText = waitResult.status.port || service.port
+    ? `port ${waitResult.status.port || service.port}`
+    : 'unknown port';
+  const processText = waitResult.status.processAlive
+    ? 'process is alive but not ready'
+    : 'no live process detected';
+  const waitedSeconds = Math.max(1, Math.round(waitResult.waitedMs / 1000));
+
+  return `${service.displayName} did not become ready within ${waitedSeconds}s (${portText}; ${processText})`;
+}
+
 async function updateRecordedListenerPid(name) {
   const service = SERVICES[name];
   if (!service) return;
@@ -351,6 +421,7 @@ async function processCommand(msg) {
   if (!msg || !msg.command) return;
 
   const cmd = msg.command;
+  let postActionDelay = 0;
 
   if (cmd === 'status') {
     await sendStatus();
@@ -358,9 +429,10 @@ async function processCommand(msg) {
   }
 
   if (cmd === 'start_queue') {
+    const serviceName = 'SOLOCoder-QueueServer';
     const status = await getStatus();
-    if (!status.queueServerRunning && !hasLiveServiceProcess('SOLOCoder-QueueServer')) {
-      const result = startServer('SOLOCoder-QueueServer');
+    if (!status.queueServerRunning && !hasLiveServiceProcess(serviceName)) {
+      const result = startServer(serviceName);
       if (!result.ok) {
         sendMessage({
           type: 'error',
@@ -369,12 +441,25 @@ async function processCommand(msg) {
         return;
       }
     }
+
+    if (!status.queueServerRunning) {
+      const waitResult = await waitForServiceState(serviceName, true, SERVICES[serviceName].startupTimeoutMs);
+      if (!waitResult.ok) {
+        sendMessage({
+          type: 'error',
+          message: formatServiceReadinessError(serviceName, waitResult)
+        });
+        return;
+      }
+    }
   } else if (cmd === 'stop_queue') {
     await stopServer('SOLOCoder-QueueServer');
+    postActionDelay = 3000;
   } else if (cmd === 'start_web') {
+    const serviceName = 'SOLOCoder-WebConsole';
     const status = await getStatus();
-    if (!status.webConsoleRunning && !hasLiveServiceProcess('SOLOCoder-WebConsole')) {
-      const result = startServer('SOLOCoder-WebConsole');
+    if (!status.webConsoleRunning && !hasLiveServiceProcess(serviceName)) {
+      const result = startServer(serviceName);
       if (!result.ok) {
         sendMessage({
           type: 'error',
@@ -383,14 +468,30 @@ async function processCommand(msg) {
         return;
       }
     }
+
+    if (!status.webConsoleRunning) {
+      const waitResult = await waitForServiceState(serviceName, true, SERVICES[serviceName].startupTimeoutMs);
+      if (!waitResult.ok) {
+        sendMessage({
+          type: 'error',
+          message: formatServiceReadinessError(serviceName, waitResult)
+        });
+        return;
+      }
+    }
   } else if (cmd === 'stop_web') {
     await stopServer('SOLOCoder-WebConsole');
+    postActionDelay = 3000;
   }
 
-  const delay = cmd.indexOf('stop') === 0 ? 3000 : 1500;
-  setTimeout(() => {
-    void sendStatus();
-  }, delay);
+  if (postActionDelay > 0) {
+    setTimeout(() => {
+      void sendStatus();
+    }, postActionDelay);
+    return;
+  }
+
+  await sendStatus();
 }
 
 let buffer = Buffer.alloc(0);
