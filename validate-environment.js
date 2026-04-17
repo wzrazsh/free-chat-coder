@@ -15,6 +15,8 @@ const {
   getDefaultProfileCandidatesForWorkspace,
   getNativeHostManifestCandidates
 } = require('./chromevideo/host/install_host');
+const deepseekWebProvider = require('./queue-server/providers/deepseek-web/client');
+const { captureAuthState } = require('./queue-server/providers/deepseek-web/auth');
 
 const REPO_ROOT = __dirname;
 const STATUS_ICON = {
@@ -280,8 +282,196 @@ function buildCheckSections() {
     { title: 'Dependencies', checks: [] },
     { title: 'Extension', checks: [] },
     { title: 'Native Host', checks: [] },
-    { title: 'Services', checks: [] }
+    { title: 'Services', checks: [] },
+    { title: 'DeepSeek Web', checks: [] }
   ];
+}
+
+function getDeepSeekAuthStorePath(repoRoot) {
+  return path.join(repoRoot, 'queue-server', 'data', 'deepseek-web-auth.json');
+}
+
+function buildDeepSeekOnboardCommand(repoRoot, effectiveProfile) {
+  return `node scripts/onboard-deepseek-web.js --profile ${displayPath(repoRoot, effectiveProfile)}`;
+}
+
+function listMissingDeepSeekAuthFields(payload) {
+  const auth = payload?.auth || {};
+  const cookies = Array.isArray(auth.cookies) ? auth.cookies : [];
+  const missing = [];
+
+  if (!auth.cookieHeader || cookies.length === 0) {
+    missing.push('cookieHeader');
+  }
+  if (!auth.bearerToken) {
+    missing.push('bearerToken');
+  }
+  if (!auth.userAgent) {
+    missing.push('userAgent');
+  }
+
+  return missing;
+}
+
+async function collectDeepSeekWebDiagnostics(options = {}) {
+  const repoRoot = options.repoRoot || REPO_ROOT;
+  const effectiveProfile = path.resolve(options.effectiveProfile || path.join(repoRoot, '.browser-profile'));
+  const section = { title: 'DeepSeek Web', checks: [] };
+  const storePath = getDeepSeekAuthStorePath(repoRoot);
+  const displayStorePath = displayPath(repoRoot, storePath);
+  const displayProfilePath = displayPath(repoRoot, effectiveProfile);
+  const inspectAuthStateFn = options.inspectAuthStateFn || deepseekWebProvider.inspectAuthState;
+  const captureAuthStateFn = options.captureAuthStateFn || captureAuthState;
+  const onboardCommand = buildDeepSeekOnboardCommand(repoRoot, effectiveProfile);
+
+  let authSummary = null;
+  try {
+    authSummary = inspectAuthStateFn(storePath);
+  } catch (error) {
+    addCheck(
+      section,
+      'Auth snapshot',
+      'warn',
+      `Unreadable snapshot: ${displayStorePath}`,
+      {
+        details: [error.message || String(error)],
+        fixes: [
+          `Remove or repair \`${displayStorePath}\`, then rerun \`${onboardCommand}\`.`
+        ]
+      }
+    );
+  }
+
+  if (authSummary) {
+    const snapshotDetails = [
+      `store=${displayStorePath}`,
+      authSummary.capturedAt ? `capturedAt=${authSummary.capturedAt}` : null,
+      authSummary.pageUrl ? `page=${authSummary.pageUrl}` : null
+    ].filter(Boolean);
+    const snapshotFixes = dedupe([
+      `Run \`${onboardCommand}\` after logging in via the workspace browser profile.`
+    ]);
+
+    addCheck(
+      section,
+      'Auth snapshot',
+      authSummary.ready ? 'pass' : 'warn',
+      authSummary.ready
+        ? `Ready (${displayStorePath})`
+        : authSummary.reason === 'missing_snapshot'
+          ? `Not onboarded (${displayStorePath})`
+          : `Incomplete (${authSummary.missing.join(', ')})`,
+      {
+        details: snapshotDetails,
+        fixes: authSummary.ready ? [] : snapshotFixes,
+        reportFixes: !authSummary.ready
+      }
+    );
+
+    const storedProfilePath = authSummary.profilePath ? path.resolve(authSummary.profilePath) : null;
+    const profileMatches = storedProfilePath && storedProfilePath === effectiveProfile;
+    addCheck(
+      section,
+      'Auth snapshot profile',
+      !storedProfilePath ? 'info' : profileMatches ? 'pass' : 'warn',
+      !storedProfilePath
+        ? 'Not available until onboarding completes'
+        : profileMatches
+          ? displayPath(repoRoot, storedProfilePath)
+          : `${displayPath(repoRoot, storedProfilePath)} (expected ${displayProfilePath})`,
+      {
+        details: [`diagnosticsProfile=${displayProfilePath}`],
+        fixes: !storedProfilePath || profileMatches
+          ? []
+          : [`Re-run \`${onboardCommand}\` so the stored auth snapshot matches the active profile.`],
+        reportFixes: Boolean(storedProfilePath && !profileMatches)
+      }
+    );
+  }
+
+  let liveCapture = null;
+  try {
+    liveCapture = await captureAuthStateFn({
+      profilePath: effectiveProfile
+    });
+  } catch (error) {
+    liveCapture = {
+      ok: false,
+      issues: [error.message || String(error)],
+      recommendations: [
+        `Retry \`${onboardCommand}\` after confirming the workspace browser profile is running with remote debugging enabled.`
+      ],
+      debug: {
+        devToolsReachable: false,
+        devToolsActivePort: {
+          filePath: path.join(effectiveProfile, 'DevToolsActivePort'),
+          port: null
+        },
+        browserVersion: null,
+        targetCount: 0,
+        deepseekTarget: null
+      },
+      auth: {
+        userAgent: null,
+        cookieHeader: null,
+        cookies: [],
+        bearerToken: null,
+        bearerSource: null,
+        pageUrl: null
+      }
+    };
+  }
+  const liveMissing = listMissingDeepSeekAuthFields(liveCapture);
+  const liveIssues = Array.isArray(liveCapture?.issues) ? liveCapture.issues : [];
+  const liveRecommendations = Array.isArray(liveCapture?.recommendations) ? liveCapture.recommendations : [];
+  const liveDevToolsInfo = liveCapture?.debug?.devToolsActivePort || {};
+  const livePageUrl = liveCapture?.auth?.pageUrl || liveCapture?.debug?.deepseekTarget?.url || null;
+
+  addCheck(
+    section,
+    'Debug browser attach',
+    liveCapture?.debug?.devToolsReachable ? 'pass' : 'warn',
+    liveCapture?.debug?.devToolsReachable
+      ? `Reachable on 127.0.0.1:${liveDevToolsInfo.port}`
+      : `Unavailable for ${displayProfilePath}`,
+    {
+      details: [
+        liveDevToolsInfo.filePath ? `DevToolsActivePort=${displayPath(repoRoot, liveDevToolsInfo.filePath)}` : null,
+        liveCapture?.debug?.browserVersion ? `browser=${liveCapture.debug.browserVersion}` : null,
+        liveCapture?.debug?.targetCount >= 0 ? `targets=${liveCapture.debug.targetCount}` : null,
+        liveCapture?.debug?.deepseekTarget?.url ? `deepseekPage=${liveCapture.debug.deepseekTarget.url}` : null,
+        ...liveIssues.slice(0, 2)
+      ].filter(Boolean),
+      fixes: liveCapture?.debug?.devToolsReachable ? [] : liveRecommendations,
+      reportFixes: !liveCapture?.debug?.devToolsReachable
+    }
+  );
+
+  addCheck(
+    section,
+    'Live auth capture',
+    liveCapture?.ok ? 'pass' : 'warn',
+    liveCapture?.ok
+      ? 'cookie / bearer / userAgent captured'
+      : `Missing ${liveMissing.length > 0 ? liveMissing.join(', ') : 'live auth state'}`,
+    {
+      details: [
+        `cookies=${Array.isArray(liveCapture?.auth?.cookies) ? liveCapture.auth.cookies.length : 0}`,
+        livePageUrl ? `page=${livePageUrl}` : null,
+        liveCapture?.auth?.bearerSource ? `bearerSource=${liveCapture.auth.bearerSource}` : null,
+        ...liveIssues.slice(2, 4)
+      ].filter(Boolean),
+      fixes: liveCapture?.ok
+        ? []
+        : dedupe([
+            ...liveRecommendations,
+            `Use \`${onboardCommand}\` once the live check reports cookie / bearer / userAgent as available.`
+          ]),
+      reportFixes: !liveCapture?.ok
+    }
+  );
+
+  return section;
 }
 
 async function detectExtensionInstallation(repoRoot, options = {}) {
@@ -327,6 +517,7 @@ async function collectEnvironmentDiagnostics(options = {}) {
   const extension = sections[1];
   const nativeHost = sections[2];
   const services = sections[3];
+  const deepseekWeb = sections[4];
   const queueDir = path.join(repoRoot, 'queue-server');
   const webConsoleDir = path.join(repoRoot, 'web-console');
   const extensionDir = path.join(repoRoot, 'chromevideo');
@@ -603,6 +794,12 @@ async function collectEnvironmentDiagnostics(options = {}) {
     );
   }
 
+  const deepseekSection = await collectDeepSeekWebDiagnostics({
+    repoRoot,
+    effectiveProfile
+  });
+  deepseekWeb.checks.push(...deepseekSection.checks);
+
   const checks = sections.flatMap((section) => section.checks);
   const failures = checks.filter((check) => check.status === 'fail');
   const warnings = checks.filter((check) => check.status === 'warn');
@@ -704,6 +901,7 @@ if (require.main === module) {
 }
 
 module.exports = {
+  collectDeepSeekWebDiagnostics,
   collectEnvironmentDiagnostics,
   formatReport,
   parseArgs,

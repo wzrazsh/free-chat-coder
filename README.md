@@ -25,6 +25,7 @@ node validate-environment.js --profile .browser-profile
 ```
 
 `validate-environment.js` 现在会集中输出扩展 ID、Native Host manifest 安装位置、Queue Server / Web Console 端口状态，以及浏览器、Node 模块和可选 `Xvfb` 依赖的诊断结果；如果存在阻塞问题，会直接给出可执行修复步骤。
+当 `.browser-profile` 处于带远程调试的运行状态时，诊断结果还会额外显示 `DeepSeek Web` 分组，用于检查已保存的 zero-token 登录态快照、profile 是否匹配，以及当前浏览器是否仍能抓到 `cookie` / `bearer` / `userAgent`。
 
 如果要为后续的 `DeepSeek Web Zero-Token` provider 预先采集本机登录态，可运行：
 
