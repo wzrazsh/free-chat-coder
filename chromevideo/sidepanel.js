@@ -7,7 +7,6 @@ const HOST_NAME = "com.trae.freechatcoder.host";
 let port = null;
 let statusInterval = null;
 let autoScrollEnabled = true;
-const QUEUE_SERVER_URL = 'http://localhost:8082';
 let pendingConfirms = [];
 let confirmPollInterval = null;
 const respondingConfirmIds = new Set();
@@ -22,6 +21,34 @@ let autoEvolveState = {
   deepseekTabId: null,
   progress: 0
 };
+
+function updateQueuePortLabel(portNumber) {
+  const portTag = document.getElementById('queue-port-tag');
+  if (!portTag) {
+    return;
+  }
+
+  portTag.textContent = portNumber ? `:${portNumber}` : ':8080+';
+}
+
+async function getQueueServerTarget(force = false) {
+  const target = await queueConfig.discoverQueueServer({ force });
+  updateQueuePortLabel(target.port);
+  return target;
+}
+
+async function queueFetch(path, init) {
+  const target = await getQueueServerTarget();
+  const url = `${target.httpUrl}${path}`;
+
+  try {
+    return await fetch(url, init);
+  } catch (error) {
+    queueConfig.clearQueueServerCache();
+    const retryTarget = await getQueueServerTarget(true);
+    return fetch(`${retryTarget.httpUrl}${path}`, init);
+  }
+}
 
 // ══════════════════════════════════════════
 //  视图切换
@@ -102,7 +129,7 @@ function renderPendingConfirms() {
 
 async function fetchPendingConfirms() {
   try {
-    const response = await fetch(`${QUEUE_SERVER_URL}/tasks/confirms`);
+    const response = await queueFetch('/tasks/confirms');
     if (!response.ok) {
       throw new Error(`HTTP ${response.status}`);
     }
@@ -122,7 +149,7 @@ async function respondConfirm(confirmId, approved) {
   renderPendingConfirms();
 
   try {
-    const response = await fetch(`${QUEUE_SERVER_URL}/tasks/confirms/${confirmId}`, {
+    const response = await queueFetch(`/tasks/confirms/${confirmId}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ approved })
@@ -196,7 +223,7 @@ function renderConversationList() {
 
 async function fetchExtensionConversations(preferredConversationId = null) {
   try {
-    const response = await fetch(`${QUEUE_SERVER_URL}/conversations?origin=extension&limit=50`);
+    const response = await queueFetch('/conversations?origin=extension&limit=50');
     if (!response.ok) {
       throw new Error(`HTTP ${response.status}`);
     }
@@ -235,7 +262,7 @@ async function loadConversationMessages(conversationId) {
   }
 
   try {
-    const response = await fetch(`${QUEUE_SERVER_URL}/conversations/${conversationId}/messages`);
+    const response = await queueFetch(`/conversations/${conversationId}/messages`);
     if (!response.ok) {
       throw new Error(`HTTP ${response.status}`);
     }
@@ -646,6 +673,7 @@ function connectHost() {
       if (msg.type === 'status') {
         updateStatus('queue', msg.queueServerRunning);
         updateStatus('web', msg.webConsoleRunning);
+        updateQueuePortLabel(msg.queueServerPort);
         document.getElementById('error').textContent = '';
         document.getElementById('setup-hint').style.display = 'none';
         updateConnectionUI(true);
@@ -657,6 +685,7 @@ function connectHost() {
       } else if (msg.type === 'heartbeat_status') {
         updateStatus('queue', msg.queueAlive);
         updateStatus('web', msg.webAlive);
+        updateQueuePortLabel(msg.queueServerPort);
       }
     });
 
@@ -667,6 +696,7 @@ function connectHost() {
         document.getElementById('setup-hint').style.display = 'block';
         addLogMessage('system', '🔴 Native Host 断开连接');
       }
+      updateQueuePortLabel(null);
       updateStatus('queue', false, 'Disconnected');
       updateStatus('web', false, 'Disconnected');
       updateConnectionUI(false);
@@ -746,6 +776,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   else if (msg.type === 'heartbeat_status') {
     updateStatus('queue', msg.queueAlive);
     updateStatus('web', msg.webAlive);
+    updateQueuePortLabel(msg.queueServerPort);
   }
   else if (msg.type === 'evolve_progress') {
     updateEvolveProgress(msg.progress);

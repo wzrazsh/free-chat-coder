@@ -9,6 +9,7 @@ chrome.sidePanel
 // 导入自动进化监控模块
 try {
   importScripts('auto-evolve-monitor.js');
+  importScripts('utils/queue-config.js');
   console.log('[SW] Auto-evolve monitor loaded');
 } catch (error) {
   console.error('[SW] Failed to load auto-evolve monitor:', error);
@@ -16,11 +17,14 @@ try {
 
 // 维护当前任务 ID
 let currentBackgroundTaskId = null;
-const QUEUE_SERVER_URL = 'http://localhost:8082';
 const MANAGED_CONVERSATION_STATE_KEY = 'managedConversationState';
 
 function createRequestId(prefix) {
   return `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+async function getQueueServerTarget(force = false) {
+  return queueConfig.discoverQueueServer({ force });
 }
 
 async function fetchJson(url, options = {}) {
@@ -39,6 +43,23 @@ async function fetchJson(url, options = {}) {
   }
 
   return response.status === 204 ? null : response.json();
+}
+
+async function fetchQueueJson(path, options = {}) {
+  const buildUrl = (target) => `${target.httpUrl}${path}`;
+  let target = await getQueueServerTarget();
+
+  try {
+    return await fetchJson(buildUrl(target), options);
+  } catch (error) {
+    if (error instanceof TypeError) {
+      queueConfig.clearQueueServerCache();
+      target = await getQueueServerTarget(true);
+      return fetchJson(buildUrl(target), options);
+    }
+
+    throw error;
+  }
 }
 
 async function getManagedConversationState() {
@@ -93,7 +114,7 @@ async function sendActionToTab(tabId, action, params = {}) {
 }
 
 async function createConversationRecord(payload) {
-  const response = await fetchJson(`${QUEUE_SERVER_URL}/conversations`, {
+  const response = await fetchQueueJson('/conversations', {
     method: 'POST',
     body: JSON.stringify(payload)
   });
@@ -101,7 +122,7 @@ async function createConversationRecord(payload) {
 }
 
 async function getConversationRecord(conversationId) {
-  const response = await fetchJson(`${QUEUE_SERVER_URL}/conversations/${conversationId}`);
+  const response = await fetchQueueJson(`/conversations/${conversationId}`);
   return response.conversation;
 }
 
@@ -134,7 +155,7 @@ async function syncConversationWithServer(conversationId, tabId, metadata = {}) 
     metadata
   };
 
-  return fetchJson(`${QUEUE_SERVER_URL}/conversations/${conversationId}/sync`, {
+  return fetchQueueJson(`/conversations/${conversationId}/sync`, {
     method: 'POST',
     body: JSON.stringify(syncPayload)
   });
@@ -415,16 +436,14 @@ class AutoEvolveController {
 
     // 发送到 queue-server
     try {
-      const response = await fetch('http://localhost:8082/tasks', {
+      await fetchQueueJson('/tasks', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(task)
       });
 
-      if (response.ok) {
-        console.log('[AEC] Evolution task created');
-        this.updateProgress(this.lastCheckedMessageCount + 1, '任务已创建');
-      }
+      console.log('[AEC] Evolution task created');
+      this.updateProgress(this.lastCheckedMessageCount + 1, '任务已创建');
     } catch (err) {
       console.error('[AEC] Failed to create task:', err);
     }
@@ -486,12 +505,9 @@ const autoEvolveController = new AutoEvolveController();
 
 // ==================== 心跳检测系统 ====================
 const HEARTBEAT_INTERVAL_MS = 30000; // 每30秒检测一次
-const HEARTBEAT_PORTS = {
-  queue: 8082,
-  web: 5173
-};
+const WEB_CONSOLE_PORT = 5173;
 let heartbeatInterval = null;
-let lastHeartbeatStatus = { queue: false, web: false };
+let lastHeartbeatStatus = { queue: false, queuePort: null, web: false };
 
 /**
  * 发送心跳检测命令到 Native Host
@@ -532,6 +548,22 @@ async function checkPort(port) {
   }
 }
 
+async function checkQueueServer() {
+  try {
+    const target = await getQueueServerTarget(true);
+    return {
+      alive: true,
+      port: target.port
+    };
+  } catch (error) {
+    queueConfig.clearQueueServerCache();
+    return {
+      alive: false,
+      port: null
+    };
+  }
+}
+
 /**
  * 心跳检测主函数
  */
@@ -539,24 +571,28 @@ async function heartbeatCheck() {
   console.log('[Heartbeat] Checking services...');
 
   try {
-    // 使用 HTTP 请求检测端口是否响应
-    const [queueAlive, webAlive] = await Promise.all([
-      checkPort(HEARTBEAT_PORTS.queue),
-      checkPort(HEARTBEAT_PORTS.web)
+    const [queueStatus, webAlive] = await Promise.all([
+      checkQueueServer(),
+      checkPort(WEB_CONSOLE_PORT)
     ]);
+
+    const queueAlive = queueStatus.alive;
+    const queueServerPort = queueStatus.port;
 
     const statusChanged =
       lastHeartbeatStatus.queue !== queueAlive ||
-      lastHeartbeatStatus.web !== webAlive;
+      lastHeartbeatStatus.web !== webAlive ||
+      lastHeartbeatStatus.queuePort !== queueServerPort;
 
     if (statusChanged) {
-      console.log('[Heartbeat] Status changed - queue:', queueAlive, 'web:', webAlive);
-      lastHeartbeatStatus = { queue: queueAlive, web: webAlive };
+      console.log('[Heartbeat] Status changed - queue:', queueAlive, 'port:', queueServerPort, 'web:', webAlive);
+      lastHeartbeatStatus = { queue: queueAlive, queuePort: queueServerPort, web: webAlive };
 
       // 通知 popup 状态更新
       chrome.runtime.sendMessage({
         type: 'heartbeat_status',
         queueAlive,
+        queueServerPort,
         webAlive
       }).catch(() => {});
     }

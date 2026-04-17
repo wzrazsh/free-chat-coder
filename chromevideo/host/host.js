@@ -1,6 +1,8 @@
 const cp = require('child_process');
 const path = require('path');
 const fs = require('fs');
+const sharedConfig = require('../../shared/config');
+const { discoverQueueServer } = require('../../shared/queue-server');
 
 const WORKSPACE = path.resolve(__dirname, '../../');
 const QUEUE_DIR = path.join(WORKSPACE, 'queue-server');
@@ -10,11 +12,13 @@ const PID_FILE = path.join(__dirname, '.service-pids.json');
 const SERVICES = {
   'SOLOCoder-QueueServer': {
     dir: QUEUE_DIR,
-    port: 8082,
+    type: 'queue',
+    preferredPort: sharedConfig.queueServer.preferredPort,
     args: [path.join(QUEUE_DIR, 'node_modules', 'nodemon', 'bin', 'nodemon.js'), 'index.js']
   },
   'SOLOCoder-WebConsole': {
     dir: WEB_DIR,
+    type: 'web',
     port: 5173,
     args: [path.join(WEB_DIR, 'node_modules', 'vite', 'bin', 'vite.js')]
   }
@@ -29,6 +33,10 @@ function sendMessage(msg) {
 }
 
 function getPidByPort(port) {
+  if (!port) {
+    return null;
+  }
+
   try {
     const output = cp.execSync('netstat -ano | findstr :' + port, { windowsHide: true }).toString();
     const lines = output.trim().split('\n');
@@ -39,7 +47,7 @@ function getPidByPort(port) {
       }
     }
   } catch (err) {
-    // Port not in use or error
+    // Port not in use or error.
   }
   return null;
 }
@@ -49,14 +57,18 @@ function loadPids() {
     if (fs.existsSync(PID_FILE)) {
       return JSON.parse(fs.readFileSync(PID_FILE, 'utf8'));
     }
-  } catch (e) { /* ignore */ }
+  } catch (error) {
+    // Ignore broken pid cache and rebuild it on next write.
+  }
   return {};
 }
 
 function savePids(data) {
   try {
     fs.writeFileSync(PID_FILE, JSON.stringify(data, null, 2));
-  } catch (e) { /* ignore */ }
+  } catch (error) {
+    // Ignore write failures in the native host helper.
+  }
 }
 
 function getRecordedRootPid(record) {
@@ -68,9 +80,9 @@ function isPidAlive(pid) {
   if (!pid) return false;
 
   try {
-    const output = cp.execSync('tasklist /FI "PID eq ' + pid + '" /FO CSV /NH', { windowsHide: true }).toString().trim();
+    const output = cp.execSync(`tasklist /FI "PID eq ${pid}" /FO CSV /NH`, { windowsHide: true }).toString().trim();
     return !!output && !output.startsWith('INFO:') && !output.includes('No tasks are running');
-  } catch (e) {
+  } catch (error) {
     return false;
   }
 }
@@ -79,9 +91,9 @@ function killPidTree(pid) {
   if (!pid) return false;
 
   try {
-    cp.execSync('taskkill /F /T /PID ' + pid, { timeout: 5000, windowsHide: true });
+    cp.execSync(`taskkill /F /T /PID ${pid}`, { timeout: 5000, windowsHide: true });
     return true;
-  } catch (e) {
+  } catch (error) {
     return false;
   }
 }
@@ -93,17 +105,37 @@ function removeServiceRecord(name) {
   savePids(pids);
 }
 
-function updateRecordedListenerPid(name) {
+async function discoverQueueService(timeoutMs = 1000) {
+  return discoverQueueServer({
+    host: sharedConfig.queueServer.host,
+    timeoutMs
+  });
+}
+
+async function updateRecordedListenerPid(name) {
   const service = SERVICES[name];
   if (!service) return;
 
-  const listenerPid = getPidByPort(service.port);
+  let listenerPid = null;
+  let activePort = service.port || null;
+
+  if (service.type === 'queue') {
+    const queueTarget = await discoverQueueService(1200);
+    if (queueTarget) {
+      activePort = queueTarget.port;
+      listenerPid = getPidByPort(queueTarget.port);
+    }
+  } else {
+    listenerPid = getPidByPort(service.port);
+  }
+
   if (!listenerPid) return;
 
   const pids = loadPids();
   if (!pids[name]) return;
 
   pids[name].listenerPid = listenerPid;
+  pids[name].port = activePort;
   pids[name].updatedAt = new Date().toISOString();
   savePids(pids);
 }
@@ -148,25 +180,25 @@ function startServer(name) {
     const pids = loadPids();
     pids[name] = {
       pid: child.pid,
-      port: service.port,
+      port: service.type === 'queue' ? null : service.port,
       startedAt: new Date().toISOString()
     };
     savePids(pids);
 
     child.unref();
 
-    setTimeout(function() {
-      updateRecordedListenerPid(name);
+    setTimeout(() => {
+      void updateRecordedListenerPid(name);
     }, 3000);
 
     return true;
-  } catch (err) {
+  } catch (error) {
     removeServiceRecord(name);
     return false;
   }
 }
 
-function stopServer(name) {
+async function stopServer(name) {
   const service = SERVICES[name];
   if (!service) return;
 
@@ -174,7 +206,6 @@ function stopServer(name) {
   const record = pids[name];
   const rootPid = getRecordedRootPid(record);
   const listenerPid = Number(record && record.listenerPid ? record.listenerPid : 0) || null;
-  const livePortPid = getPidByPort(service.port);
 
   killPidTree(rootPid);
 
@@ -182,76 +213,92 @@ function stopServer(name) {
     killPidTree(listenerPid);
   }
 
-  if (livePortPid && livePortPid !== rootPid && livePortPid !== listenerPid) {
-    killPidTree(livePortPid);
+  if (service.type === 'queue') {
+    const queueTarget = await discoverQueueService(1000);
+    const queuePort = record?.port || queueTarget?.port || null;
+    const liveQueuePid = getPidByPort(queuePort);
+    if (liveQueuePid && liveQueuePid !== rootPid && liveQueuePid !== listenerPid) {
+      killPidTree(liveQueuePid);
+    }
+  } else {
+    const livePortPid = getPidByPort(service.port);
+    if (livePortPid && livePortPid !== rootPid && livePortPid !== listenerPid) {
+      killPidTree(livePortPid);
+    }
   }
 
   delete pids[name];
   savePids(pids);
 }
 
-function getStatus() {
+async function getStatus() {
+  const queueTarget = await discoverQueueService(900);
+
   return {
-    queueServerRunning: !!getPidByPort(SERVICES['SOLOCoder-QueueServer'].port),
+    queueServerRunning: !!queueTarget,
+    queueServerPort: queueTarget ? queueTarget.port : null,
     webConsoleRunning: !!getPidByPort(SERVICES['SOLOCoder-WebConsole'].port)
   };
 }
 
-function processCommand(msg) {
+async function sendStatus() {
+  sendMessage({
+    type: 'status',
+    ...(await getStatus())
+  });
+}
+
+async function processCommand(msg) {
   if (!msg || !msg.command) return;
 
-  var cmd = msg.command;
-  var response = { type: 'result', command: cmd };
+  const cmd = msg.command;
 
   if (cmd === 'status') {
-    response.type = 'status';
-    Object.assign(response, getStatus());
-  } else if (cmd === 'start_queue') {
-    if (!getPidByPort(SERVICES['SOLOCoder-QueueServer'].port) && !hasLiveServiceProcess('SOLOCoder-QueueServer')) {
+    await sendStatus();
+    return;
+  }
+
+  if (cmd === 'start_queue') {
+    const status = await getStatus();
+    if (!status.queueServerRunning && !hasLiveServiceProcess('SOLOCoder-QueueServer')) {
       startServer('SOLOCoder-QueueServer');
     }
   } else if (cmd === 'stop_queue') {
-    stopServer('SOLOCoder-QueueServer');
+    await stopServer('SOLOCoder-QueueServer');
   } else if (cmd === 'start_web') {
     if (!getPidByPort(SERVICES['SOLOCoder-WebConsole'].port) && !hasLiveServiceProcess('SOLOCoder-WebConsole')) {
       startServer('SOLOCoder-WebConsole');
     }
   } else if (cmd === 'stop_web') {
-    stopServer('SOLOCoder-WebConsole');
+    await stopServer('SOLOCoder-WebConsole');
   }
 
-  if (cmd !== 'status') {
-    var delay = cmd.indexOf('stop') === 0 ? 3000 : 1500;
-    setTimeout(function() {
-      sendMessage({
-        type: 'status',
-        queueServerRunning: !!getPidByPort(SERVICES['SOLOCoder-QueueServer'].port),
-        webConsoleRunning: !!getPidByPort(SERVICES['SOLOCoder-WebConsole'].port)
-      });
-    }, delay);
-  } else {
-    sendMessage(response);
-  }
+  const delay = cmd.indexOf('stop') === 0 ? 3000 : 1500;
+  setTimeout(() => {
+    void sendStatus();
+  }, delay);
 }
 
-var buffer = Buffer.alloc(0);
+let buffer = Buffer.alloc(0);
 process.stdin.on('data', function(chunk) {
   buffer = Buffer.concat([buffer, chunk]);
 
   while (buffer.length >= 4) {
-    var msgLen = buffer.readUInt32LE(0);
+    const msgLen = buffer.readUInt32LE(0);
     if (buffer.length < 4 + msgLen) {
       break;
     }
 
-    var msgBuf = buffer.slice(4, 4 + msgLen);
+    const msgBuf = buffer.slice(4, 4 + msgLen);
     buffer = buffer.slice(4 + msgLen);
 
     try {
-      var msg = JSON.parse(msgBuf.toString('utf8'));
-      processCommand(msg);
-    } catch (err) {
-      sendMessage({ type: 'error', message: 'Failed to parse message: ' + err.message });
+      const msg = JSON.parse(msgBuf.toString('utf8'));
+      void processCommand(msg).catch((error) => {
+        sendMessage({ type: 'error', message: error.message || String(error) });
+      });
+    } catch (error) {
+      sendMessage({ type: 'error', message: 'Failed to parse message: ' + error.message });
     }
   }
 });

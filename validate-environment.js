@@ -7,9 +7,10 @@ function validateEnvironment() {
   // 检查Node.js版本
   try {
     const nodeVersion = execSync('node --version').toString().trim();
+    const majorVersion = Number((nodeVersion.match(/^v(\d+)/) || [])[1] || 0);
     checks.push({
       name: 'Node.js version',
-      status: nodeVersion.startsWith('v16') || nodeVersion.startsWith('v18') || nodeVersion.startsWith('v20') || nodeVersion.startsWith('v22'),
+      status: majorVersion >= 16,
       value: nodeVersion
     });
   } catch (error) {
@@ -77,5 +78,5 @@ if (!result.allPassed) {
 console.log('✅ Environment validation passed!');
 console.log('\nNext steps:');
 console.log('1. Install Queue-Server dependencies: cd queue-server && npm install');
-console.log('2. Start Queue-Server: cd queue-server && npm start');
+console.log('2. Start Queue-Server: cd queue-server && npm run dev');
 console.log('3. Load Chrome extension in browser');

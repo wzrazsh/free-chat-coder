@@ -1,33 +1,57 @@
-// e:/workspace/free-chat-coder/shared/config.js
-// 统一管理各个模块的连接地址和端口配置
-// 默认值可以通过各环境的覆盖方式修改
+const path = require('path');
+
+const DEFAULT_QUEUE_PORT = 8080;
+const DEFAULT_WEB_IDE_PORT = 8081;
+const DEFAULT_QUEUE_PORT_CANDIDATES = [8080, 8082, 8083, 8084, 8085, 8086, 8087, 8088, 8089, 8090];
 
 const getEnv = (key, defaultValue) => {
-  if (typeof process !== 'undefined' && process.env) {
-    return process.env[key] || defaultValue;
+  if (typeof process !== 'undefined' && process.env && process.env[key]) {
+    return process.env[key];
   }
   return defaultValue;
 };
 
+const getEnvNumber = (key, defaultValue) => {
+  const value = Number(getEnv(key, defaultValue));
+  return Number.isInteger(value) && value > 0 ? value : defaultValue;
+};
+
+const buildQueuePortCandidates = (preferredPort) => {
+  return Array.from(
+    new Set([preferredPort, ...DEFAULT_QUEUE_PORT_CANDIDATES].filter((port) => Number.isInteger(port) && port > 0))
+  );
+};
+
+const queuePreferredPort = getEnvNumber('QUEUE_PORT', getEnvNumber('PORT', DEFAULT_QUEUE_PORT));
+const webIdePort = getEnvNumber('WEB_IDE_PORT', DEFAULT_WEB_IDE_PORT);
+
 const config = {
-  // Queue Server 配置
   queueServer: {
     host: getEnv('QUEUE_HOST', '127.0.0.1'),
-    port: getEnv('QUEUE_PORT', 8082),
-    get httpUrl() { return `http://${this.host}:${this.port}`; },
-    get wsUrl() { return `ws://${this.host}:${this.port}`; }
+    serviceName: 'free-chat-coder-queue-server',
+    preferredPort: queuePreferredPort,
+    port: queuePreferredPort,
+    get portCandidates() {
+      return buildQueuePortCandidates(this.preferredPort).filter((port) => port !== webIdePort);
+    },
+    get httpUrl() {
+      return `http://${this.host}:${this.port}`;
+    },
+    get wsUrl() {
+      return `ws://${this.host}:${this.port}`;
+    }
   },
 
-  // Web IDE (code-server) 配置
   webIde: {
     host: getEnv('WEB_IDE_HOST', '127.0.0.1'),
-    port: getEnv('WEB_IDE_PORT', 8081),
-    get httpUrl() { return `http://${this.host}:${this.port}`; }
+    port: webIdePort,
+    get httpUrl() {
+      return `http://${this.host}:${this.port}`;
+    }
   },
 
-  // 工作区路径
   workspace: {
-    path: getEnv('WORKSPACE_PATH', 'E:/workspace/free-chat-coder')
+    path: getEnv('WORKSPACE_PATH', path.resolve(__dirname, '..'))
   }
 };
 

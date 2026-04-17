@@ -5,6 +5,7 @@
 
 const path = require('path');
 const fs = require('fs');
+const { discoverQueueServer } = require('../../shared/queue-server');
 
 const WORKSPACE_ROOT = process.env.WORKSPACE_ROOT || path.resolve(__dirname, '../../..');
 
@@ -109,30 +110,12 @@ class UnifiedTestRunner {
    * @returns {Promise<boolean>}
    */
   async checkServerRunning() {
-    return new Promise((resolve) => {
-      try {
-        const WebSocket = require('ws');
-        const ws = new WebSocket('ws://localhost:8082', {
-          timeout: 2000
-        });
-
-        ws.on('open', () => {
-          ws.close();
-          resolve(true);
-        });
-
-        ws.on('error', () => {
-          resolve(false);
-        });
-
-        setTimeout(() => {
-          ws.terminate();
-          resolve(false);
-        }, 2000);
-      } catch (error) {
-        resolve(false);
-      }
-    });
+    try {
+      const queueServer = await discoverQueueServer({ timeoutMs: 1200 });
+      return !!queueServer;
+    } catch (error) {
+      return false;
+    }
   }
 
   /**

@@ -10,6 +10,15 @@ let autoEvolveState = {
   progress: 0
 };
 
+function updateQueueTitle(portNumber) {
+  const queueTitle = document.getElementById('queue-title');
+  if (!queueTitle) {
+    return;
+  }
+
+  queueTitle.textContent = `Queue Server (Port ${portNumber || '8080+'})`;
+}
+
 // 加载保存的进化状态
 async function loadEvolveState() {
   return new Promise((resolve) => {
@@ -155,6 +164,7 @@ function connectHost() {
       if (msg.type === 'status') {
         updateStatus('queue', msg.queueServerRunning);
         updateStatus('web', msg.webConsoleRunning);
+        updateQueueTitle(msg.queueServerPort);
         document.getElementById('error').textContent = '';
         document.getElementById('setup-hint').style.display = 'none';
       } else if (msg.type === 'error') {
@@ -165,6 +175,7 @@ function connectHost() {
         // 心跳检测到的状态变化
         updateStatus('queue', msg.queueAlive);
         updateStatus('web', msg.webAlive);
+        updateQueueTitle(msg.queueServerPort);
       }
     });
 
@@ -174,6 +185,7 @@ function connectHost() {
         document.getElementById('error').textContent = `Native Host Disconnected: ${err.message}`;
         document.getElementById('setup-hint').style.display = 'block';
       }
+      updateQueueTitle(null);
       updateStatus('queue', false, 'Disconnected');
       updateStatus('web', false, 'Disconnected');
       port = null;

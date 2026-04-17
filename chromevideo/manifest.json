@@ -20,14 +20,16 @@
   },
   "host_permissions": [
     "https://chat.deepseek.com/*",
-    "http://localhost:8082/*"
+    "http://localhost/*"
   ],
   "background": {
     "service_worker": "background.js"
   },
   "content_scripts": [
     {
-      "matches": ["https://chat.deepseek.com/*"],
+      "matches": [
+        "https://chat.deepseek.com/*"
+      ],
       "js": [
         "utils/dom-helpers.js",
         "utils/anti-detection.js",

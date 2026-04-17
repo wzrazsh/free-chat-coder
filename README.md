@@ -1,17 +1,122 @@
 # free-chat-coder
 
-## 环境依赖
-本仓库需要运行一个独立的 Web IDE (基于 code-server)。为缩减仓库代码量，我们不再内置 code-server 代码，请使用以下两种方式之一来安装和运行。
+`free-chat-coder` 是一个本地多组件原型工程，包含任务队列服务、Web 控制台、Chrome 扩展，以及可选的 `code-server` Web IDE。
 
-### 方式 1: 全局安装
+## 目录结构
+
+- `queue-server/`：Express + WebSocket 后端，负责任务队列、会话同步、审批与热更新。
+- `web-console/`：Vite + React 控制台，用于查看任务、审批操作、浏览扩展会话和编辑 `custom-handler.js`。
+- `chromevideo/`：Chrome 扩展、offscreen WebSocket 客户端、side panel 和 Native Messaging Host。
+- `shared/`：共享配置与队列服务发现逻辑。
+- `scripts/`：维护脚本。
+- `doc/`：设计文档和阶段记录。
+
+## 环境要求
+
+- Node.js 16 及以上
+- Chrome 或 Chromium（加载扩展时需要）
+- 可选：`code-server`，默认端口 `8081`
+
+先执行一次环境检查：
+
 ```bash
-npm install -g @coder/code-server
-code-server --port 8081
+node validate-environment.js
 ```
 
-### 方式 2: 使用 npx 运行
+## 安装依赖
+
+仓库不是 workspace 模式，需要分别安装：
+
+```bash
+cd queue-server && npm install
+cd ../web-console && npm install
+```
+
+## 本地启动
+
+启动 Queue Server：
+
+```bash
+cd queue-server
+npm run dev
+```
+
+启动 Web Console：
+
+```bash
+cd web-console
+npm run dev
+```
+
+如需本地 Web IDE，再单独启动：
+
 ```bash
 npx @coder/code-server --port 8081
 ```
 
-> **注意**: 在 `shared/config.js` 中默认配置了 Web IDE 的端口为 `8081`。如果启动端口不同，请通过环境变量 `WEB_IDE_PORT` 覆盖或直接修改配置文件。
+## 端口说明
+
+- Queue Server 优先使用 `8080`
+- 如果 `8080` 已被占用，会自动回退到 `8082`、`8083`…`8090`
+- `8081` 保留给 `code-server`
+- Web Console 固定为 `5173`
+
+当前实现中，`web-console`、Chrome 扩展、offscreen 页面和 Native Host 都会通过 `/health` 自动发现 Queue Server 的实际端口，因此不需要手动同步 `8080/8082`。
+
+Queue Server 健康检查：
+
+```bash
+curl http://127.0.0.1:8080/health
+```
+
+如果 `8080` 被占用，请查看后端启动日志里实际选择的端口。
+
+## Chrome 扩展
+
+1. 打开 `chrome://extensions`
+2. 开启开发者模式
+3. 选择“加载已解压的扩展程序”
+4. 选择仓库中的 `chromevideo/`
+
+如果要使用扩展中的本地服务启停能力，还需要安装 Native Messaging Host：
+
+```bash
+node chromevideo/host/install_host.js
+```
+
+该安装脚本会写入 Windows 注册表并生成 `host.bat`，因此这部分实现目前偏 Windows 环境。
+
+## 常用命令
+
+```bash
+cd queue-server && npm run dev
+cd web-console && npm run dev
+cd web-console && npm run build
+cd web-console && npm run lint
+node scripts/sync-config.js
+```
+
+`scripts/sync-config.js` 当前主要用于同步扩展里的默认端口展示和 `manifest.json` 的本地访问权限；运行时端口发现不依赖这个脚本。
+
+## 验证建议
+
+至少执行以下检查：
+
+```bash
+node -c queue-server/index.js
+node -c chromevideo/background.js
+node -c chromevideo/offscreen.js
+node -c chromevideo/sidepanel.js
+```
+
+如果已安装 `web-console` 依赖，再执行：
+
+```bash
+cd web-console && npm run build
+```
+
+最后手动确认：
+
+- Web Console 能正常连接到 Queue Server
+- Chrome 扩展能收到任务并回传结果
+- `/evolve` 保存后，`nodemon` 能自动重启后端

@@ -1,6 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const http = require('http');
+const { discoverQueueServer } = require('../shared/queue-server');
 
 const pdfPath = path.resolve(__dirname, '../free-chat-coder_code.pdf');
 
@@ -29,31 +30,43 @@ const payload = JSON.stringify({
   }
 });
 
-console.log('Submitting task to Queue-Server...');
-
-// 3. 发送 POST 请求到 queue-server
-const req = http.request({
-  hostname: 'localhost',
-  port: 8082,
-  path: '/tasks',
-  method: 'POST',
-  headers: {
-    'Content-Type': 'application/json',
-    'Content-Length': Buffer.byteLength(payload)
+async function submitTask() {
+  const queueServer = await discoverQueueServer();
+  if (!queueServer) {
+    console.error('Queue-Server is not running on the candidate ports.');
+    process.exit(1);
   }
-}, (res) => {
-  let responseData = '';
-  res.on('data', (chunk) => { responseData += chunk; });
-  res.on('end', () => {
-    console.log(`Status Code: ${res.statusCode}`);
-    console.log('Response:', responseData);
-    console.log('\nTask submitted! The Chrome extension should now automatically upload the file and send the prompt in the DeepSeek window.');
+
+  console.log(`Submitting task to Queue-Server on port ${queueServer.port}...`);
+
+  const req = http.request({
+    hostname: queueServer.host,
+    port: queueServer.port,
+    path: '/tasks',
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Content-Length': Buffer.byteLength(payload)
+    }
+  }, (res) => {
+    let responseData = '';
+    res.on('data', (chunk) => { responseData += chunk; });
+    res.on('end', () => {
+      console.log(`Status Code: ${res.statusCode}`);
+      console.log('Response:', responseData);
+      console.log('\nTask submitted! The Chrome extension should now automatically upload the file and send the prompt in the DeepSeek window.');
+    });
   });
-});
 
-req.on('error', (e) => {
-  console.error(`Problem with request: ${e.message}`);
-});
+  req.on('error', (e) => {
+    console.error(`Problem with request: ${e.message}`);
+  });
 
-req.write(payload);
-req.end();
+  req.write(payload);
+  req.end();
+}
+
+submitTask().catch((error) => {
+  console.error('Failed to submit task:', error);
+  process.exit(1);
+});

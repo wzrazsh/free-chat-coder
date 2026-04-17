@@ -1,13 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Activity, CheckCircle, Clock, Code, Link2, Plus, XCircle } from 'lucide-react';
 import Editor from '@monaco-editor/react';
-
-const API_URL = '/api';
-
-const getWsUrl = () => {
-  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-  return `${protocol}//${window.location.host}/ws`;
-};
+import {
+  clearDiscoveredQueueServer,
+  discoverQueueServer,
+  requestQueueServer,
+} from './queueServer';
 
 interface Task {
   id: string;
@@ -101,6 +99,7 @@ function App() {
   const [isEvolveModalOpen, setIsEvolveModalOpen] = useState(false);
   const [customCode, setCustomCode] = useState('// Fetching current custom-handler.js...');
   const [respondingConfirmId, setRespondingConfirmId] = useState<string | null>(null);
+  const [queuePort, setQueuePort] = useState<number | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
   const activeConversationIdRef = useRef('');
 
@@ -116,8 +115,14 @@ function App() {
     activeConversationIdRef.current = activeConversationId;
   }, [activeConversationId]);
 
+  const queueRequest = async (path: string, init?: RequestInit) => {
+    const { response, target } = await requestQueueServer(path, init);
+    setQueuePort(target.port);
+    return response;
+  };
+
   const fetchTasks = async () => {
-    const response = await fetch(`${API_URL}/tasks`);
+    const response = await queueRequest('/tasks');
     const data = await response.json();
     if (data.tasks) {
       setTasks(data.tasks);
@@ -125,7 +130,7 @@ function App() {
   };
 
   const fetchPendingConfirms = async () => {
-    const response = await fetch(`${API_URL}/tasks/confirms`);
+    const response = await queueRequest('/tasks/confirms');
     const data = await response.json();
     if (data.confirms) {
       setPendingConfirms(data.confirms);
@@ -133,7 +138,7 @@ function App() {
   };
 
   const fetchConversations = async (preferredId?: string) => {
-    const response = await fetch(`${API_URL}/conversations?origin=extension&limit=100`);
+    const response = await queueRequest('/conversations?origin=extension&limit=100');
     const data = await response.json();
     const nextConversations = Array.isArray(data.conversations) ? data.conversations : [];
     setConversations(nextConversations);
@@ -153,7 +158,7 @@ function App() {
       return;
     }
 
-    const response = await fetch(`${API_URL}/conversations/${conversationId}/messages`);
+    const response = await queueRequest(`/conversations/${conversationId}/messages`);
     const data = await response.json();
     setConversationMessages(Array.isArray(data.messages) ? data.messages : []);
   };
@@ -166,7 +171,7 @@ function App() {
     fetchPendingConfirms().catch((err) => console.error('Failed to fetch pending confirms:', err));
     fetchConversations().catch((err) => console.error('Failed to fetch conversations:', err));
 
-    fetch(`${API_URL}/evolve`)
+    queueRequest('/evolve')
       .then((res) => res.json())
       .then((data) => {
         if (data.code) {
@@ -176,44 +181,61 @@ function App() {
       .catch((err) => console.error('Failed to fetch custom handler code:', err));
 
     const connectWs = () => {
-      const ws = new WebSocket(getWsUrl());
+      discoverQueueServer()
+        .then((target) => {
+          setQueuePort(target.port);
+          const ws = new WebSocket(target.wsUrl);
 
-      ws.onopen = () => {
-        setIsConnected(true);
-        ws.send(JSON.stringify({ type: 'register', clientType: 'web' }));
-      };
+          ws.onopen = () => {
+            setIsConnected(true);
+            ws.send(JSON.stringify({ type: 'register', clientType: 'web' }));
+          };
 
-      ws.onmessage = (event) => {
-        try {
-          const data = JSON.parse(event.data);
+          ws.onmessage = (event) => {
+            try {
+              const data = JSON.parse(event.data);
 
-          if (data.type === 'task_added' || data.type === 'task_update') {
-            setTasks((prev) => upsertTask(prev, data.task));
-          } else if (data.type === 'confirm_request') {
-            setPendingConfirms((prev) => upsertConfirm(prev, data));
-          } else if (data.type === 'confirm_resolved') {
-            setPendingConfirms((prev) => prev.filter((confirm) => confirm.confirmId !== data.confirmId));
-          } else if (data.type === 'conversation_created' || data.type === 'conversation_updated') {
-            setConversations((prev) => upsertConversation(prev, data.conversation));
-          } else if (data.type === 'conversation_messages_updated') {
-            if (data.conversationId === activeConversationIdRef.current) {
-              fetchConversationMessages(data.conversationId).catch((err) => console.error('Failed to refresh conversation messages:', err));
+              if (data.type === 'task_added' || data.type === 'task_update') {
+                setTasks((prev) => upsertTask(prev, data.task));
+              } else if (data.type === 'confirm_request') {
+                setPendingConfirms((prev) => upsertConfirm(prev, data));
+              } else if (data.type === 'confirm_resolved') {
+                setPendingConfirms((prev) => prev.filter((confirm) => confirm.confirmId !== data.confirmId));
+              } else if (data.type === 'conversation_created' || data.type === 'conversation_updated') {
+                setConversations((prev) => upsertConversation(prev, data.conversation));
+              } else if (data.type === 'conversation_messages_updated') {
+                if (data.conversationId === activeConversationIdRef.current) {
+                  fetchConversationMessages(data.conversationId).catch((err) => console.error('Failed to refresh conversation messages:', err));
+                }
+                fetchConversations(data.conversationId).catch((err) => console.error('Failed to refresh conversations:', err));
+              }
+            } catch (err) {
+              console.error('Failed to parse WS message:', err);
             }
-            fetchConversations(data.conversationId).catch((err) => console.error('Failed to refresh conversations:', err));
+          };
+
+          ws.onclose = () => {
+            setIsConnected(false);
+            clearDiscoveredQueueServer();
+            if (!disposed) {
+              reconnectTimer = setTimeout(connectWs, 3000);
+            }
+          };
+
+          ws.onerror = () => {
+            ws.close();
+          };
+
+          wsRef.current = ws;
+        })
+        .catch((err) => {
+          console.error('Failed to discover queue server for WebSocket:', err);
+          setIsConnected(false);
+          clearDiscoveredQueueServer();
+          if (!disposed) {
+            reconnectTimer = setTimeout(connectWs, 3000);
           }
-        } catch (err) {
-          console.error('Failed to parse WS message:', err);
-        }
-      };
-
-      ws.onclose = () => {
-        setIsConnected(false);
-        if (!disposed) {
-          reconnectTimer = setTimeout(connectWs, 3000);
-        }
-      };
-
-      wsRef.current = ws;
+        });
     };
 
     connectWs();
@@ -242,7 +264,7 @@ function App() {
     const options = activeConversationId ? { conversationId: activeConversationId } : {};
 
     try {
-      const response = await fetch(`${API_URL}/tasks`, {
+      const response = await queueRequest('/tasks', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ prompt, options })
@@ -264,7 +286,7 @@ function App() {
 
   const handleEvolveSubmit = async () => {
     try {
-      await fetch(`${API_URL}/evolve`, {
+      await queueRequest('/evolve', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ code: customCode })
@@ -282,7 +304,7 @@ function App() {
     setRespondingConfirmId(confirmId);
 
     try {
-      const response = await fetch(`${API_URL}/tasks/confirms/${confirmId}`, {
+      const response = await queueRequest(`/tasks/confirms/${confirmId}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ approved })
@@ -339,6 +361,9 @@ function App() {
             </button>
           </div>
           <div className="flex items-center gap-2">
+            <span className="text-sm text-gray-500">
+              Queue: {queuePort ? `:${queuePort}` : 'Detecting'}
+            </span>
             <span className="text-sm font-medium">WS Status:</span>
             <div className={`h-3 w-3 rounded-full ${isConnected ? 'bg-green-500' : 'bg-red-500'}`} />
           </div>
