@@ -9,25 +9,9 @@ const queueCandidates = [8080, 8082, 8083, 8084, 8085, 8086, 8087, 8088, 8089, 8
 
 const priorities = [
   {
-    id: 'P0-2',
-    title: '补齐扩展到本地服务的端到端回归测试',
-    reason: '2026-04-17 已重新验证浏览器启动自动拉起链路，但当前关键链路仍主要依赖人工验证，回归成本高。',
-    files: [
-      'chromevideo/background.js',
-      'chromevideo/offscreen.js',
-      'chromevideo/host/host.js',
-      'chromevideo/host/install_host.js',
-      'queue-server/index.js'
-    ],
-    acceptance: [
-      '至少覆盖扩展加载、Native Host 连通、Queue Server 健康检查、Web Console 连接四条链路',
-      '测试结果可在本地脚本或 CI 中复用'
-    ]
-  },
-  {
     id: 'P1-1',
     title: '增加安装自检与诊断输出',
-    reason: '当前安装步骤仍偏开发者视角，用户遇到 Native Host、端口或依赖问题时定位成本高。',
+    reason: '浏览器启动自动拉起已补齐回归覆盖后，当前更大的用户阻力变成安装与排障路径不透明。',
     files: [
       'validate-environment.js',
       'chromevideo/host/install_host.js',
@@ -51,6 +35,21 @@ const priorities = [
       '进化前自动跑最小验证',
       '失败时能定位到具体变更并触发回滚',
       'Web Console 能查看最近一次进化的验证结果'
+    ]
+  },
+  {
+    id: 'P2-1',
+    title: '整合 popup / sidepanel 的工作台能力',
+    reason: '基础链路稳定后，下一步产品体验差距主要来自入口分散、状态反馈不统一。',
+    files: [
+      'chromevideo/popup.js',
+      'chromevideo/sidepanel.js',
+      'chromevideo/popup.html',
+      'chromevideo/sidepanel.html'
+    ],
+    acceptance: [
+      '服务状态、启动日志和常用操作有统一入口',
+      '用户不需要在 popup 和 sidepanel 之间来回切换才能完成基本排障'
     ]
   }
 ];
@@ -172,12 +171,13 @@ async function main() {
     '',
     '- 当前项目已完成扩展、Queue Server、Web Console、自动进化和 Native Host 的基础闭环。',
     '- 当前阶段应定义为“稳定化 + 产品化”，而不是继续堆原型能力。',
-    '- 浏览器启动场景下服务自动拉起已在 2026-04-17 通过真实验证，当前更需要把这条链路固化为可复用回归测试。',
+    '- 浏览器启动场景下服务自动拉起已在 2026-04-17 完成真实验证，并已补齐可复用的端到端回归脚本。',
     '',
     '## 最近完成',
     '',
     '- P0-1 已完成：`chromevideo/host/install_host.js` 现已支持从浏览器 profile 自动识别扩展 ID，并写入 Chromium / Chrome for Testing 所需的 Native Messaging 清单路径。',
-    '- 2026-04-17 实测：仅打开带扩展的 Chromium，2 秒内 `Queue Server` 与 `Web Console` 均自动拉起。',
+    '- P0-2 已完成：新增 `test-playwright-e2e.js`，可在真实 `.browser-profile` 上验证扩展加载、Native Host 拉起、Queue `/health`、Web Console 与 offscreen WebSocket 链路。',
+    '- `scripts/nightly-validate.sh` 已接入该回归测试，在具备浏览器 / Xvfb / 依赖时可自动执行。',
     '',
     '## 当前最高优先任务',
     ''
@@ -208,7 +208,7 @@ async function main() {
   lines.push('## 下一次进入会话时建议先做的事');
   lines.push('');
   lines.push('- 先读本文件、`README.md` 和 `git status --short`。');
-  lines.push('- 先把“扩展加载 -> Native Host -> Queue Server/Web Console”整理成可重复执行的回归脚本。');
+  lines.push('- 先补一条安装自检命令，把扩展 ID、Native Host 清单位置、浏览器/端口/依赖异常直接打印出来。');
   lines.push('- 功能改动完成后，先验证，再提交。');
   lines.push('');
 

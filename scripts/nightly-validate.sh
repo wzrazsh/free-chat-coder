@@ -45,12 +45,32 @@ run_check "sidepanel syntax" node -c chromevideo/sidepanel.js
 run_check "native host syntax" node -c chromevideo/host/host.js
 run_check "status report generation" node scripts/dev-status-report.js
 
+has_browser() {
+  if find "$HOME/.cache/ms-playwright" -path '*/chrome-linux64/chrome' 2>/dev/null | grep -q .; then
+    return 0
+  fi
+
+  command -v chromium >/dev/null 2>&1 && return 0
+  command -v chromium-browser >/dev/null 2>&1 && return 0
+  command -v google-chrome >/dev/null 2>&1 && return 0
+  command -v google-chrome-stable >/dev/null 2>&1 && return 0
+  command -v google-chrome-for-testing >/dev/null 2>&1 && return 0
+
+  return 1
+}
+
 if [ -d "$REPO_ROOT/web-console/node_modules" ]; then
   run_check "web-console build" bash -lc "cd \"$REPO_ROOT/web-console\" && npm run build"
   run_check "web-console lint" bash -lc "cd \"$REPO_ROOT/web-console\" && npm run lint"
 else
   skip_check "web-console build" "missing web-console/node_modules"
   skip_check "web-console lint" "missing web-console/node_modules"
+fi
+
+if [ -d "$REPO_ROOT/queue-server/node_modules" ] && [ -d "$REPO_ROOT/web-console/node_modules" ] && [ -d "$REPO_ROOT/.browser-profile" ] && command -v Xvfb >/dev/null 2>&1 && has_browser; then
+  run_check "extension startup e2e" node test-playwright-e2e.js
+else
+  skip_check "extension startup e2e" "missing browser/Xvfb/profile or module dependencies"
 fi
 
 REPORT+="\n## 汇总\n\n"

@@ -129,7 +129,10 @@ node -c queue-server/index.js
 node -c chromevideo/background.js
 node -c chromevideo/offscreen.js
 node -c chromevideo/sidepanel.js
+node test-playwright-e2e.js
 ```
+
+`node test-playwright-e2e.js` 会在干净状态下启动 Chromium + 扩展，验证 Native Host 自动拉起 `Queue Server` / `Web Console`、检查 `/health` 与 offscreen WebSocket，然后在结束后把这两个本地服务停掉。运行前请先确保 `queue-server/node_modules`、`web-console/node_modules`、`.browser-profile`、`Xvfb` 和浏览器可执行文件都已准备好，且 `Queue Server` / `Web Console` 当前未在运行。
 
 如果已安装 `web-console` 依赖，再执行：
 

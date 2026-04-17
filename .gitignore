@@ -5,6 +5,7 @@ node_modules/
 .omc
 .history
 test*.js
+!test-*.js
 *.log
 *.ttf
 *.pdf
