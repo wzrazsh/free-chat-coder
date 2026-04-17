@@ -13,7 +13,6 @@ function createTask(id, prompt) {
     id,
     prompt,
     options: {
-      provider: 'deepseek-web',
       autoEvolve: true,
       maxRounds: 4
     },
@@ -102,13 +101,13 @@ function patchQueueManager(harness) {
   };
 }
 
-function waitForTaskCompletion(harness, taskId, timeoutMs = 4000) {
+function waitForTaskState(harness, taskId, predicate, timeoutMs = 4000) {
   const startedAt = Date.now();
 
   return new Promise((resolve, reject) => {
     const tick = () => {
       const task = harness.getTask(taskId);
-      if (task && (task.status === 'completed' || task.status === 'failed')) {
+      if (task && predicate(task)) {
         resolve(task);
         return;
       }
@@ -123,6 +122,15 @@ function waitForTaskCompletion(harness, taskId, timeoutMs = 4000) {
 
     tick();
   });
+}
+
+function waitForTaskCompletion(harness, taskId, timeoutMs = 4000) {
+  return waitForTaskState(
+    harness,
+    taskId,
+    (task) => task.status === 'completed' || task.status === 'failed',
+    timeoutMs
+  );
 }
 
 async function runContinuationScenario() {
@@ -214,9 +222,51 @@ async function runMissingExtensionScenario() {
   }
 }
 
+async function runProviderFallbackScenario() {
+  const task = createTask('deepseek-server-fallback', 'Recover from provider auth failure.');
+  const harness = createQueueHarness(task);
+  const restoreQueue = patchQueueManager(harness);
+  const originalExecuteTask = providerRegistry.executeTask;
+  let providerCallCount = 0;
+
+  try {
+    assert.strictEqual(providerRegistry.getTaskProvider(task), 'deepseek-web');
+
+    providerRegistry.executeTask = async () => {
+      providerCallCount += 1;
+      const error = new Error('DeepSeek Web auth snapshot is missing.');
+      error.code = 'DEEPSEEK_AUTH_REQUIRED';
+      throw error;
+    };
+
+    wsHandler.triggerAssign();
+
+    const requeuedTask = await waitForTaskState(
+      harness,
+      task.id,
+      (nextTask) => (
+        nextTask.status === 'pending'
+        && providerRegistry.getTaskProvider(nextTask) === 'extension-dom'
+        && nextTask.options?.providerFallback?.from === 'deepseek-web'
+      )
+    );
+
+    assert.strictEqual(providerCallCount, 1);
+    assert.strictEqual(requeuedTask.options.provider, 'extension-dom');
+    assert.strictEqual(requeuedTask.error, null);
+    assert.strictEqual(requeuedTask.executionChannel, null);
+    assert.strictEqual(requeuedTask.options.providerFallback.to, 'extension-dom');
+    assert.ok(requeuedTask.options.providerFallback.error.includes('DEEPSEEK_AUTH_REQUIRED'));
+  } finally {
+    providerRegistry.executeTask = originalExecuteTask;
+    restoreQueue();
+  }
+}
+
 async function main() {
   await runContinuationScenario();
   await runMissingExtensionScenario();
+  await runProviderFallbackScenario();
   console.log('PASS test-deepseek-server-loop');
   process.exit(0);
 }

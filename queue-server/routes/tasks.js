@@ -21,15 +21,15 @@ router.post('/', (req, res) => {
     return res.status(400).json({ error: 'Prompt is required' });
   }
 
-  const provider = options.provider || providerRegistry.DEFAULT_PROVIDER;
-  if (!providerRegistry.isKnownProvider(provider)) {
+  if (options.provider && !providerRegistry.isKnownProvider(options.provider)) {
     return res.status(400).json({
-      error: `Unknown provider: ${provider}`,
+      error: `Unknown provider: ${options.provider}`,
       supportedProviders: Object.keys(providerRegistry.providers)
     });
   }
 
-  const task = queueManager.addTask(prompt, providerRegistry.normalizeTaskOptions(options));
+  const normalizedOptions = providerRegistry.normalizeTaskOptions(options);
+  const task = queueManager.addTask(prompt, normalizedOptions);
 
   if (task.options?.conversationId) {
     try {

@@ -1,6 +1,7 @@
 const deepseekWebProvider = require('./deepseek-web/client');
 
 const DEFAULT_PROVIDER = 'extension-dom';
+const AUTO_EVOLVE_PROVIDER = 'deepseek-web';
 
 const providers = {
   'extension-dom': {
@@ -19,12 +20,28 @@ function isKnownProvider(providerId) {
   return Boolean(providerId && providers[providerId]);
 }
 
+function getImplicitProvider(taskOrOptions) {
+  if (!taskOrOptions || typeof taskOrOptions !== 'object') {
+    return DEFAULT_PROVIDER;
+  }
+
+  const options = taskOrOptions.options && typeof taskOrOptions.options === 'object'
+    ? taskOrOptions.options
+    : taskOrOptions;
+
+  if (options.autoEvolve === true) {
+    return AUTO_EVOLVE_PROVIDER;
+  }
+
+  return DEFAULT_PROVIDER;
+}
+
 function getTaskProvider(taskOrOptions) {
   const rawProvider = typeof taskOrOptions === 'string'
     ? taskOrOptions
     : taskOrOptions?.options?.provider || taskOrOptions?.provider;
 
-  return isKnownProvider(rawProvider) ? rawProvider : DEFAULT_PROVIDER;
+  return isKnownProvider(rawProvider) ? rawProvider : getImplicitProvider(taskOrOptions);
 }
 
 function normalizeTaskOptions(options = {}) {
@@ -63,6 +80,7 @@ async function executeTask(task, options = {}) {
 }
 
 module.exports = {
+  AUTO_EVOLVE_PROVIDER,
   DEFAULT_PROVIDER,
   canDispatchTask,
   executeTask,

@@ -63,6 +63,61 @@ function extractProviderResult(providerResult) {
   return '';
 }
 
+function resolveTaskFallbackProvider(task, failedProviderId) {
+  if (task?.options?.autoEvolve !== true) {
+    return null;
+  }
+
+  const fallbackProvider = providerRegistry.getTaskProvider(
+    task?.options?.fallbackProvider || providerRegistry.DEFAULT_PROVIDER
+  );
+
+  return fallbackProvider === failedProviderId ? null : fallbackProvider;
+}
+
+function requeueTaskWithProviderFallback(task, failedProviderId, error) {
+  const fallbackProvider = resolveTaskFallbackProvider(task, failedProviderId);
+  if (!fallbackProvider) {
+    return false;
+  }
+
+  const fallbackError = formatTaskError(error);
+  const fallbackMetadata = {
+    from: failedProviderId,
+    to: fallbackProvider,
+    error: fallbackError,
+    failedAt: new Date().toISOString()
+  };
+  const requeuedTask = queueManager.requeueTask(task.id, {
+    error: null,
+    result: null,
+    executionChannel: null,
+    providerSessionId: null,
+    providerParentMessageId: null,
+    providerMessageId: null,
+    providerEndpointPath: null,
+    providerRequestId: null,
+    providerResponseMode: null,
+    options: providerRegistry.normalizeTaskOptions({
+      ...(task.options || {}),
+      provider: fallbackProvider,
+      providerFallback: fallbackMetadata
+    })
+  });
+
+  if (!requeuedTask) {
+    return false;
+  }
+
+  console.warn(`[WS] Falling back auto-evolve task ${task.id} from ${failedProviderId} to ${fallbackProvider}: ${fallbackError}`);
+  broadcastToWeb({
+    type: 'task_update',
+    task: requeuedTask
+  });
+  assignNextTask();
+  return true;
+}
+
 function finishTaskUpdate(taskId, status, result, error, options = {}) {
   const taskUpdates = options && typeof options.taskUpdates === 'object' ? options.taskUpdates : {};
   const conversationMetadata = options && typeof options.conversationMetadata === 'object'
@@ -331,6 +386,9 @@ async function executeServerSideTask(task) {
     if (providerId === 'deepseek-web') {
       deepseekWebBusy = false;
     }
+    if (requeueTaskWithProviderFallback(task, providerId, error)) {
+      return;
+    }
     const formattedError = formatTaskError(error);
     console.warn(`[WS] ${providerId} task ${task.id} failed: ${formattedError}`);
     finishTaskUpdate(task.id, 'failed', null, formattedError);
@@ -471,6 +529,7 @@ function setupWebSocket(server) {
             // 自动创建一个新任务放到队列头部
             const task = queueManager.addTask(prompt, {
               autoEvolve: true,
+              fallbackProvider: 'extension-dom',
               skipSystemInstruction: false,
               maxRounds: data.maxRounds || 5,
               priority: priority,
