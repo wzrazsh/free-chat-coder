@@ -55,6 +55,49 @@ interface ConversationMessage {
   createdAt: string;
 }
 
+interface ValidationCheck {
+  name?: string;
+  targetPath?: string | null;
+  command?: string | null;
+  error?: string | null;
+  reason?: string | null;
+}
+
+interface ValidationPhase {
+  success: boolean;
+  phase?: string | null;
+  decision?: string | null;
+  reason?: string | null;
+  checkCount?: number;
+  reportPath?: string | null;
+  failedChecks?: ValidationCheck[];
+}
+
+interface EvolutionValidation {
+  evolutionId: string;
+  action: string;
+  riskLevel: string;
+  targetPath: string;
+  targetRelativePath: string;
+  startedAt: string;
+  completedAt?: string;
+  success: boolean;
+  blocked?: boolean;
+  summary?: string;
+  candidate?: {
+    success: boolean;
+    reason?: string | null;
+  } | null;
+  preflight?: ValidationPhase | null;
+  postChange?: ValidationPhase | null;
+  rollback?: {
+    attempted?: boolean;
+    success?: boolean | null;
+    error?: string | null;
+    createdFileRemoved?: boolean;
+  } | null;
+}
+
 const upsertTask = (taskList: Task[], nextTask: Task) => {
   const existingIndex = taskList.findIndex((task) => task.id === nextTask.id);
   if (existingIndex === -1) {
@@ -100,6 +143,9 @@ function App() {
   const [customCode, setCustomCode] = useState('// Fetching current custom-handler.js...');
   const [respondingConfirmId, setRespondingConfirmId] = useState<string | null>(null);
   const [queuePort, setQueuePort] = useState<number | null>(null);
+  const [latestEvolutionValidation, setLatestEvolutionValidation] = useState<EvolutionValidation | null>(null);
+  const [evolveSubmitError, setEvolveSubmitError] = useState<string | null>(null);
+  const [isEvolving, setIsEvolving] = useState(false);
   const wsRef = useRef<WebSocket | null>(null);
   const activeConversationIdRef = useRef('');
 
@@ -163,13 +209,21 @@ function App() {
     setConversationMessages(Array.isArray(data.messages) ? data.messages : []);
   };
 
+  const fetchEvolutionValidationStatus = async () => {
+    const response = await queueRequest('/evolve/validation-status?limit=1');
+    const data = await response.json();
+    setLatestEvolutionValidation(data.latest || null);
+  };
+
   useEffect(() => {
     let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+    let validationTimer: ReturnType<typeof setInterval> | null = null;
     let disposed = false;
 
     fetchTasks().catch((err) => console.error('Failed to fetch tasks:', err));
     fetchPendingConfirms().catch((err) => console.error('Failed to fetch pending confirms:', err));
     fetchConversations().catch((err) => console.error('Failed to fetch conversations:', err));
+    fetchEvolutionValidationStatus().catch((err) => console.error('Failed to fetch evolution validation status:', err));
 
     queueRequest('/evolve')
       .then((res) => res.json())
@@ -179,6 +233,10 @@ function App() {
         }
       })
       .catch((err) => console.error('Failed to fetch custom handler code:', err));
+
+    validationTimer = window.setInterval(() => {
+      fetchEvolutionValidationStatus().catch((err) => console.error('Failed to refresh evolution validation status:', err));
+    }, 10000);
 
     const connectWs = () => {
       discoverQueueServer()
@@ -242,6 +300,9 @@ function App() {
 
     return () => {
       disposed = true;
+      if (validationTimer) {
+        clearInterval(validationTimer);
+      }
       if (reconnectTimer) {
         clearTimeout(reconnectTimer);
       }
@@ -285,18 +346,32 @@ function App() {
   };
 
   const handleEvolveSubmit = async () => {
+    setEvolveSubmitError(null);
+    setIsEvolving(true);
+
     try {
-      await queueRequest('/evolve', {
+      const response = await queueRequest('/evolve', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ code: customCode })
       });
+
+      const data = await response.json();
+      await fetchEvolutionValidationStatus().catch((err) => console.error('Failed to refresh validation status after evolve:', err));
+
+      if (!response.ok || data.success === false) {
+        throw new Error(data.error || `Failed with status ${response.status}`);
+      }
+
       setIsEvolveModalOpen(false);
       setTimeout(() => {
         window.location.reload();
       }, 1500);
     } catch (err) {
       console.error('Failed to evolve code:', err);
+      setEvolveSubmitError(err instanceof Error ? err.message : 'Failed to evolve code');
+    } finally {
+      setIsEvolving(false);
     }
   };
 
@@ -345,6 +420,8 @@ function App() {
     return 'bg-amber-50 border-amber-200';
   };
 
+  const failedValidationChecks = latestEvolutionValidation?.postChange?.failedChecks || latestEvolutionValidation?.preflight?.failedChecks || [];
+
   return (
     <div className="min-h-screen bg-gray-50 text-gray-900 font-sans p-8">
       <div className="max-w-7xl mx-auto">
@@ -352,7 +429,10 @@ function App() {
           <div className="flex items-center gap-4">
             <h1 className="text-3xl font-bold tracking-tight">AI Agent Queue Console</h1>
             <button
-              onClick={() => setIsEvolveModalOpen(true)}
+              onClick={() => {
+                setEvolveSubmitError(null);
+                setIsEvolveModalOpen(true);
+              }}
               className="flex items-center gap-2 px-3 py-1.5 bg-indigo-50 text-indigo-700 hover:bg-indigo-100 rounded-md font-medium transition-colors text-sm border border-indigo-200"
               title="Evolve System Logic"
             >
@@ -522,6 +602,126 @@ function App() {
             <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
               <div className="flex items-center justify-between gap-4 mb-4">
                 <div>
+                  <h2 className="text-xl font-semibold">Latest Evolution Validation</h2>
+                  <p className="text-sm text-gray-500">Shows the last preflight check, post-change validation, and rollback outcome.</p>
+                </div>
+                <button
+                  onClick={() => fetchEvolutionValidationStatus().catch((err) => console.error('Failed to fetch evolution validation status:', err))}
+                  className="px-3 py-2 text-sm font-medium text-blue-700 bg-blue-50 hover:bg-blue-100 rounded-lg transition-colors"
+                >
+                  Refresh
+                </button>
+              </div>
+
+              {!latestEvolutionValidation ? (
+                <p className="text-sm text-gray-500">No evolution validation has been recorded yet.</p>
+              ) : (
+                <div className={`rounded-xl border p-5 ${
+                  latestEvolutionValidation.success
+                    ? 'border-green-200 bg-green-50'
+                    : latestEvolutionValidation.blocked
+                      ? 'border-amber-200 bg-amber-50'
+                      : 'border-red-200 bg-red-50'
+                }`}>
+                  <div className="flex items-start justify-between gap-4 mb-4">
+                    <div>
+                      <div className="flex items-center gap-2 mb-2">
+                        {latestEvolutionValidation.success ? (
+                          <CheckCircle className="text-green-600" size={20} />
+                        ) : latestEvolutionValidation.blocked ? (
+                          <Clock className="text-amber-600" size={20} />
+                        ) : (
+                          <XCircle className="text-red-600" size={20} />
+                        )}
+                        <h3 className="font-medium text-gray-900">{latestEvolutionValidation.action}</h3>
+                      </div>
+                      <p className="text-sm font-mono text-gray-600">{latestEvolutionValidation.targetRelativePath}</p>
+                      <p className="text-sm text-gray-700 mt-2">{latestEvolutionValidation.summary || 'No summary available.'}</p>
+                    </div>
+                    <span className={`px-3 py-1 rounded-full text-sm font-medium ${
+                      latestEvolutionValidation.success
+                        ? 'bg-green-100 text-green-800'
+                        : latestEvolutionValidation.blocked
+                          ? 'bg-amber-100 text-amber-800'
+                          : 'bg-red-100 text-red-800'
+                    }`}>
+                      {latestEvolutionValidation.success ? 'PASSED' : latestEvolutionValidation.blocked ? 'BLOCKED' : 'ROLLED BACK'}
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-sm">
+                    <div className="rounded-lg border border-white/70 bg-white/80 p-3">
+                      <div className="font-medium text-gray-900 mb-1">Candidate</div>
+                      <div className={latestEvolutionValidation.candidate?.success ? 'text-green-700' : 'text-red-700'}>
+                        {latestEvolutionValidation.candidate?.success ? 'Syntax passed' : 'Rejected before write'}
+                      </div>
+                      {latestEvolutionValidation.candidate?.reason && (
+                        <p className="text-xs text-gray-600 mt-1">{latestEvolutionValidation.candidate.reason}</p>
+                      )}
+                    </div>
+                    <div className="rounded-lg border border-white/70 bg-white/80 p-3">
+                      <div className="font-medium text-gray-900 mb-1">Preflight</div>
+                      <div className={latestEvolutionValidation.preflight?.success ? 'text-green-700' : 'text-red-700'}>
+                        {latestEvolutionValidation.preflight?.success ? 'Passed' : 'Failed'}
+                      </div>
+                      {latestEvolutionValidation.preflight?.reason && (
+                        <p className="text-xs text-gray-600 mt-1">{latestEvolutionValidation.preflight.reason}</p>
+                      )}
+                    </div>
+                    <div className="rounded-lg border border-white/70 bg-white/80 p-3">
+                      <div className="font-medium text-gray-900 mb-1">Post-change</div>
+                      <div className={latestEvolutionValidation.postChange?.success ? 'text-green-700' : 'text-red-700'}>
+                        {latestEvolutionValidation.postChange?.success ? 'Passed' : 'Failed'}
+                      </div>
+                      {latestEvolutionValidation.postChange?.reason && (
+                        <p className="text-xs text-gray-600 mt-1">{latestEvolutionValidation.postChange.reason}</p>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="flex flex-wrap gap-4 text-xs text-gray-600 mt-4">
+                    <span>Started: {new Date(latestEvolutionValidation.startedAt).toLocaleString()}</span>
+                    {latestEvolutionValidation.completedAt && (
+                      <span>Completed: {new Date(latestEvolutionValidation.completedAt).toLocaleString()}</span>
+                    )}
+                    <span>Risk: {(latestEvolutionValidation.riskLevel || 'unknown').toUpperCase()}</span>
+                  </div>
+
+                  {latestEvolutionValidation.rollback?.attempted && (
+                    <div className="mt-4 rounded-lg border border-white/70 bg-white/80 p-3 text-sm">
+                      <div className="font-medium text-gray-900 mb-1">Rollback</div>
+                      <p className={latestEvolutionValidation.rollback.success ? 'text-green-700' : 'text-red-700'}>
+                        {latestEvolutionValidation.rollback.success ? 'Rollback succeeded' : 'Rollback failed'}
+                      </p>
+                      {latestEvolutionValidation.rollback.error && (
+                        <p className="text-xs text-gray-600 mt-1">{latestEvolutionValidation.rollback.error}</p>
+                      )}
+                    </div>
+                  )}
+
+                  {failedValidationChecks.length > 0 && (
+                    <div className="mt-4 rounded-lg border border-white/70 bg-white/80 p-3">
+                      <div className="font-medium text-gray-900 mb-2">Failed checks</div>
+                      <div className="space-y-2">
+                        {failedValidationChecks.slice(0, 3).map((check) => (
+                          <div key={`${check.name}-${check.targetPath || check.command || 'check'}`} className="text-sm text-gray-700">
+                            <div className="font-medium">{check.name || 'validation check'}</div>
+                            <div className="text-xs text-gray-500 font-mono">{check.targetPath || check.command || 'No target recorded'}</div>
+                            {(check.error || check.reason) && (
+                              <div className="text-xs text-red-700 mt-1">{check.error || check.reason}</div>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
+              <div className="flex items-center justify-between gap-4 mb-4">
+                <div>
                   <h2 className="text-xl font-semibold">Add New Task</h2>
                   <p className="text-sm text-gray-500">{activeConversation ? 'New tasks will append prompt and result into the active conversation.' : 'Submit a standalone task or bind it to a conversation from the left panel.'}</p>
                 </div>
@@ -628,7 +828,10 @@ function App() {
                 <p className="text-sm text-gray-500 mt-1">Modify the task execution logic. Server will automatically restart.</p>
               </div>
               <button
-                onClick={() => setIsEvolveModalOpen(false)}
+                onClick={() => {
+                  setEvolveSubmitError(null);
+                  setIsEvolveModalOpen(false);
+                }}
                 className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
               >
                 <XCircle size={24} />
@@ -652,17 +855,26 @@ function App() {
             </div>
 
             <div className="p-4 flex justify-end gap-3 bg-gray-50 rounded-b-xl">
+              {evolveSubmitError && (
+                <div className="mr-auto rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+                  {evolveSubmitError}
+                </div>
+              )}
               <button
-                onClick={() => setIsEvolveModalOpen(false)}
+                onClick={() => {
+                  setEvolveSubmitError(null);
+                  setIsEvolveModalOpen(false);
+                }}
                 className="px-4 py-2 text-gray-700 font-medium hover:bg-gray-200 rounded-lg transition-colors"
               >
                 Cancel
               </button>
               <button
                 onClick={handleEvolveSubmit}
-                className="px-6 py-2 bg-indigo-600 text-white font-medium rounded-lg hover:bg-indigo-700 flex items-center gap-2 transition-colors shadow-sm"
+                disabled={isEvolving}
+                className="px-6 py-2 bg-indigo-600 text-white font-medium rounded-lg hover:bg-indigo-700 flex items-center gap-2 transition-colors shadow-sm disabled:opacity-50"
               >
-                Save & Restart Server
+                {isEvolving ? 'Validating...' : 'Save & Restart Server'}
               </button>
             </div>
           </div>

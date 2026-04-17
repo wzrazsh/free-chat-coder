@@ -1,37 +1,43 @@
 /**
  * 测试验证服务 - 主服务入口
- * 集成测试执行、结果分析和回滚机制
+ * 集成最小 P0 验证、结果分析、回滚触发和最近一次进化审计持久化
  */
 
+const fs = require('fs');
+const path = require('path');
 const { eventBus, EVENTS } = require('./event-bus');
 const { p0TestExecutor, P0_CONFIG } = require('./test-runner');
 const { TestResultAnalyzer, TestReportGenerator, DECISION } = require('./test-result-analyzer');
 const { rollbackManager } = require('./rollback-manager');
 
+const WORKSPACE_ROOT = process.env.WORKSPACE_ROOT || path.resolve(__dirname, '../..');
+const EVOLUTION_STATUS_FILE = path.join(WORKSPACE_ROOT, 'queue-server', 'data', 'evolution-validation-history.json');
+const MAX_HISTORY = 20;
+
 /**
  * 验证服务配置
  */
 const VALIDATION_CONFIG = {
-  // P0测试必须通过
   p0MustPass: true,
-
-  // 降级模式下只运行快速测试
   degradedMode: false,
-
-  // 决策置信度阈值
   confidenceThreshold: {
     pass: 0.8,
     review: 0.5,
     fail: 0
   },
-
-  // 回滚配置
   rollback: {
     enabled: true,
     onP0Failure: true,
     onLowConfidence: false
   }
 };
+
+function ensureStatusDir() {
+  const statusDir = path.dirname(EVOLUTION_STATUS_FILE);
+  if (!fs.existsSync(statusDir)) {
+    fs.mkdirSync(statusDir, { recursive: true });
+  }
+}
 
 /**
  * 测试验证服务类
@@ -41,8 +47,9 @@ class ValidationService {
     this.analyzer = new TestResultAnalyzer();
     this.lastValidation = null;
     this.pendingValidations = new Map();
+    this.evolutionStatusHistory = [];
 
-    // 注册事件监听
+    this._loadEvolutionStatusHistory();
     this.registerEventListeners();
   }
 
@@ -65,6 +72,43 @@ class ValidationService {
   }
 
   /**
+   * 记录最近一次进化验证状态，并持久化到磁盘
+   * @param {Object} status
+   * @returns {Object}
+   */
+  recordEvolutionStatus(status) {
+    const normalizedStatus = {
+      ...status,
+      recordedAt: status.recordedAt || new Date().toISOString()
+    };
+
+    this.evolutionStatusHistory = [
+      normalizedStatus,
+      ...this.evolutionStatusHistory.filter((item) => item.evolutionId !== normalizedStatus.evolutionId)
+    ].slice(0, MAX_HISTORY);
+
+    this._saveEvolutionStatusHistory();
+    return normalizedStatus;
+  }
+
+  /**
+   * 获取最近一次进化验证状态
+   * @returns {Object|null}
+   */
+  getLatestEvolutionStatus() {
+    return this.evolutionStatusHistory[0] || null;
+  }
+
+  /**
+   * 获取最近的进化验证状态列表
+   * @param {number} limit
+   * @returns {Array}
+   */
+  getRecentEvolutionStatuses(limit = 10) {
+    return this.evolutionStatusHistory.slice(0, limit);
+  }
+
+  /**
    * 执行P0测试验证
    * @param {Object} params - 验证参数
    * @returns {Promise<Object>}
@@ -77,78 +121,98 @@ class ValidationService {
       evolutionId,
       action,
       riskLevel,
+      targetPath: params.targetPath || null,
+      phase: params.phase || 'post_change',
       historySuccessRate: params.historySuccessRate || 0.8
     };
 
-    console.log(`[ValidationService] Starting P0 validation for: ${evolutionId}`);
+    console.log(`[ValidationService] Starting ${context.phase} validation for: ${evolutionId}`);
 
     eventBus.emitAsync(EVENTS.VALIDATION_START, {
       evolutionId,
-      priority: P0_CONFIG.priority
+      priority: P0_CONFIG.priority,
+      phase: context.phase,
+      targetPath: context.targetPath
     });
 
     try {
-      // 执行测试
       let testResults;
 
       if (params.testSpecific) {
-        // 运行特定测试
         testResults = await p0TestExecutor.runRelatedTests(action, {
-          timeout: P0_CONFIG.timeout
+          timeout: P0_CONFIG.timeout,
+          targetPath: params.targetPath,
+          continueOnFailure: false
         });
       } else {
-        // 运行所有P0测试
         testResults = await p0TestExecutor.runAllP0Tests({
           timeout: P0_CONFIG.timeout,
-          quickOnly: VALIDATION_CONFIG.degradedMode
+          quickOnly: VALIDATION_CONFIG.degradedMode,
+          continueOnFailure: false
         });
       }
 
-      // 分析结果
       this.analyzer.clear();
       this.analyzer.addResults(testResults);
       const analysis = this.analyzer.analyze(context);
+      const reportPath = TestReportGenerator.generateAndSave(analysis, {
+        evolutionId,
+        phase: context.phase,
+        priority: P0_CONFIG.priority,
+        targetPath: context.targetPath
+      });
 
-      // 记录验证结果
       this.lastValidation = {
         evolutionId,
         timestamp: new Date().toISOString(),
-        analysis
+        action,
+        phase: context.phase,
+        targetPath: context.targetPath,
+        analysis,
+        reportPath
       };
 
-      // 发射验证完成事件
       if (analysis.decision.action === DECISION.FAIL) {
         eventBus.emitAsync(EVENTS.VALIDATION_FAILED, {
           evolutionId,
-          analysis
+          analysis,
+          phase: context.phase
         });
       } else {
         eventBus.emitAsync(EVENTS.VALIDATION_COMPLETE, {
           evolutionId,
-          analysis
+          analysis,
+          phase: context.phase
         });
       }
 
       return {
         success: analysis.decision.action !== DECISION.FAIL,
         evolutionId,
+        action,
+        phase: context.phase,
+        targetPath: context.targetPath,
         analysis,
-        testResults: testResults.map(r => r.toJSON()),
+        testResults: testResults.map((result) => result.toJSON()),
         decision: analysis.decision,
-        recommendations: analysis.recommendations
+        recommendations: analysis.recommendations,
+        reportPath
       };
-
     } catch (error) {
-      console.error(`[ValidationService] Validation error:`, error);
+      console.error('[ValidationService] Validation error:', error);
 
       eventBus.emit(EVENTS.SERVICE_ERROR, {
         evolutionId,
-        error: error.message
+        error: error.message,
+        phase: context.phase
       });
 
       return {
         success: false,
         evolutionId,
+        action,
+        phase: context.phase,
+        targetPath: context.targetPath,
         error: error.message
       };
     }
@@ -163,11 +227,16 @@ class ValidationService {
     if (!validationResult.success && VALIDATION_CONFIG.rollback.enabled) {
       const { evolutionId, analysis } = validationResult;
 
-      console.log(`[ValidationService] Validation failed, checking rollback conditions...`);
+      if (!analysis || !analysis.decision) {
+        return validationResult;
+      }
+
+      console.log('[ValidationService] Validation failed, checking rollback conditions...');
 
       const shouldRollback =
         (VALIDATION_CONFIG.rollback.onP0Failure && analysis.decision.action === DECISION.FAIL) ||
-        (VALIDATION_CONFIG.rollback.onLowConfidence && analysis.confidence.score < VALIDATION_CONFIG.confidenceThreshold.fail);
+        (VALIDATION_CONFIG.rollback.onLowConfidence &&
+          analysis.confidence.score < VALIDATION_CONFIG.confidenceThreshold.fail);
 
       if (shouldRollback) {
         console.log(`[ValidationService] Triggering rollback for: ${evolutionId}`);
@@ -196,37 +265,8 @@ class ValidationService {
    * @returns {Promise<Object>}
    */
   async validate(params) {
-    // 1. 运行P0测试验证
     const validationResult = await this.runP0Validation(params);
-
-    // 2. 如果失败，检查是否需要回滚
-    const finalResult = await this.validateAndRollback(validationResult);
-
-    // 3. 生成报告
-    if (finalResult.analysis) {
-      finalResult.reportPath = TestReportGenerator.generateAndSave(finalResult.analysis, {
-        evolutionId: finalResult.evolutionId,
-        priority: P0_CONFIG.priority
-      });
-    }
-
-    return finalResult;
-  }
-
-  /**
-   * 生成测试报告
-   * @param {Object} params
-   * @returns {string}
-   */
-  generateReport(params = {}) {
-    if (!this.lastValidation) {
-      return null;
-    }
-
-    return TestReportGenerator.generateAndSave(this.lastValidation.analysis, {
-      evolutionId: this.lastValidation.evolutionId,
-      ...params
-    });
+    return await this.validateAndRollback(validationResult);
   }
 
   /**
@@ -238,14 +278,43 @@ class ValidationService {
       status: 'healthy',
       uptime: process.uptime(),
       lastValidation: this.lastValidation,
+      latestEvolutionStatus: this.getLatestEvolutionStatus(),
       eventBus: eventBus.healthCheck(),
       executorMetrics: p0TestExecutor.results ? p0TestExecutor.getPassRate() : null,
       rollbackRecords: rollbackManager.getAllRecords().slice(-10)
     };
   }
+
+  _loadEvolutionStatusHistory() {
+    ensureStatusDir();
+
+    if (!fs.existsSync(EVOLUTION_STATUS_FILE)) {
+      this.evolutionStatusHistory = [];
+      return;
+    }
+
+    try {
+      const data = fs.readFileSync(EVOLUTION_STATUS_FILE, 'utf8');
+      const parsed = JSON.parse(data);
+      this.evolutionStatusHistory = Array.isArray(parsed.history) ? parsed.history : [];
+    } catch (error) {
+      console.warn('[ValidationService] Failed to load evolution validation history:', error.message);
+      this.evolutionStatusHistory = [];
+    }
+  }
+
+  _saveEvolutionStatusHistory() {
+    ensureStatusDir();
+
+    const payload = {
+      updatedAt: new Date().toISOString(),
+      history: this.evolutionStatusHistory
+    };
+
+    fs.writeFileSync(EVOLUTION_STATUS_FILE, JSON.stringify(payload, null, 2), 'utf8');
+  }
 }
 
-// 导出单例实例
 const validationService = new ValidationService();
 
 module.exports = {

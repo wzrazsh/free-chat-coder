@@ -1,68 +1,23 @@
 /**
  * 统一测试运行器
- * 自动化执行 US-001 到 US-004 测试套件
+ * 运行当前仓库真实存在的验证脚本，并允许将较重的 E2E 套件按条件跳过
  */
 
 const path = require('path');
-const fs = require('fs');
 const { discoverQueueServer } = require('../../shared/queue-server');
 
-const WORKSPACE_ROOT = process.env.WORKSPACE_ROOT || path.resolve(__dirname, '../../..');
+const WORKSPACE_ROOT = process.env.WORKSPACE_ROOT || path.resolve(__dirname, '../..');
 
-/**
- * 测试套件定义
- */
 const TEST_SUITES = {
-  'US-001': {
-    id: 'US-001',
-    name: '错误检测验证',
-    testFile: path.join(WORKSPACE_ROOT, 'test-error-detection.js'),
-    description: '验证 autoEvolveMonitor 错误检测功能',
-    validUserStories: ['error-detection'],
+  'VAL-001': {
+    id: 'VAL-001',
+    name: 'Evolution validation guardrails',
+    testFile: path.join(WORKSPACE_ROOT, 'test-evolution-validation.js'),
+    description: '验证进化前最小校验、失败回滚和最近结果审计',
     priority: 'P0'
-  },
-  'US-002': {
-    id: 'US-002',
-    name: 'WebSocket消息流转',
-    testFile: path.join(WORKSPACE_ROOT, 'test-websocket-flow.js'),
-    description: '验证从Chrome扩展到Queue-Server的auto_evolve消息完整链路',
-    validUserStories: ['websocket-flow'],
-    priority: 'P0',
-    requiresServer: true
-  },
-  'US-003': {
-    id: 'US-003',
-    name: 'AI修复生成',
-    testFile: path.join(WORKSPACE_ROOT, 'test-ai-repair-generation.js'),
-    description: '验证 WebSocket handler 根据不同错误类型生成智能提示',
-    validUserStories: ['ai-repair-generation'],
-    priority: 'P0',
-    requiresServer: true
-  },
-  'US-004': {
-    id: 'US-004',
-    name: '自动批准',
-    testFile: path.join(WORKSPACE_ROOT, 'test-auto-approval.js'),
-    description: '测试 confirm-manager 对进化动作的自动批准逻辑',
-    validUserStories: ['auto-approval'],
-    priority: 'P0',
-    requiresServer: false
-  },
-  'US-005': {
-    id: 'US-005',
-    name: 'Playwright E2E测试',
-    testFile: path.join(WORKSPACE_ROOT, 'test-playwright-e2e.js'),
-    description: '使用 Playwright MCP 进行 Chrome 扩展端到端测试',
-    validUserStories: ['playwright-e2e'],
-    priority: 'P1',
-    requiresServer: true,
-    requiresBrowser: true
   }
 };
 
-/**
- * 统一测试结果格式
- */
 class UnifiedTestResult {
   constructor(suiteId, status, duration, details = {}) {
     this.suiteId = suiteId;
@@ -96,19 +51,12 @@ class UnifiedTestResult {
   }
 }
 
-/**
- * 统一测试运行器类
- */
 class UnifiedTestRunner {
   constructor() {
     this.results = new Map();
     this.serverRunning = false;
   }
 
-  /**
-   * 检查服务器是否运行
-   * @returns {Promise<boolean>}
-   */
   async checkServerRunning() {
     try {
       const queueServer = await discoverQueueServer({ timeoutMs: 1200 });
@@ -118,12 +66,6 @@ class UnifiedTestRunner {
     }
   }
 
-  /**
-   * 运行单个测试套件
-   * @param {string} suiteId - 测试套件ID (US-001, US-002, etc.)
-   * @param {Object} options - 运行选项
-   * @returns {Promise<UnifiedTestResult>}
-   */
   async runSuite(suiteId, options = {}) {
     const suite = TEST_SUITES[suiteId];
     if (!suite) {
@@ -132,7 +74,6 @@ class UnifiedTestRunner {
       });
     }
 
-    // 检查是否需要服务器
     if (suite.requiresServer && !options.skipServerCheck) {
       this.serverRunning = await this.checkServerRunning();
       if (!this.serverRunning && !options.forceRun) {
@@ -143,48 +84,34 @@ class UnifiedTestRunner {
       }
     }
 
-    // 动态导入测试执行器
-    const testRunnerModule = require('./test-runner');
-    const executor = testRunnerModule.p0TestExecutor;
-
+    const { p0TestExecutor } = require('./test-runner');
     const startTime = Date.now();
 
     try {
-      const results = await executor.runTest(suite.testFile, {
+      const result = await p0TestExecutor.runTest(suite.testFile, {
         timeout: options.timeout || 30000
       });
 
-      const unifiedResult = UnifiedTestResult.fromExistingResult(suiteId, results);
+      const unifiedResult = UnifiedTestResult.fromExistingResult(suiteId, result);
       unifiedResult.duration = Date.now() - startTime;
-
       this.results.set(suiteId, unifiedResult);
       return unifiedResult;
-
     } catch (error) {
       const unifiedResult = new UnifiedTestResult(suiteId, 'error', Date.now() - startTime, {
         error: error.message,
         stack: error.stack
       });
-
       this.results.set(suiteId, unifiedResult);
       return unifiedResult;
     }
   }
 
-  /**
-   * 运行所有测试套件
-   * @param {Object} options - 运行选项
-   * @returns {Promise<Array<UnifiedTestResult>>}
-   */
   async runAllSuites(options = {}) {
     const results = [];
-
     for (const suiteId of Object.keys(TEST_SUITES)) {
       console.log(`\n=== Running ${suiteId}: ${TEST_SUITES[suiteId].name} ===`);
-
       const result = await this.runSuite(suiteId, options);
       results.push(result);
-
       console.log(`Result: ${result.status} (${result.duration}ms)`);
       if (result.details.error) {
         console.log(`Error: ${result.details.error}`);
@@ -194,70 +121,17 @@ class UnifiedTestRunner {
     return results;
   }
 
-  /**
-   * 运行指定测试套件
-   * @param {Array<string>} suiteIds - 测试套件ID数组
-   * @param {Object} options - 运行选项
-   * @returns {Promise<Array<UnifiedTestResult>>}
-   */
-  async runSuites(suiteIds, options = {}) {
-    const results = [];
-
-    for (const suiteId of suiteIds) {
-      if (!TEST_SUITES[suiteId]) {
-        console.warn(`Unknown test suite: ${suiteId}`);
-        continue;
-      }
-
-      console.log(`\n=== Running ${suiteId}: ${TEST_SUITES[suiteId].name} ===`);
-
-      const result = await this.runSuite(suiteId, options);
-      results.push(result);
-
-      console.log(`Result: ${result.status} (${result.duration}ms)`);
-    }
-
-    return results;
-  }
-
-  /**
-   * 根据功能标签运行测试
-   * @param {string} tag - 功能标签
-   * @param {Object} options - 运行选项
-   * @returns {Promise<Array<UnifiedTestResult>>}
-   */
-  async runByTag(tag, options = {}) {
-    const matchingSuites = Object.entries(TEST_SUITES)
-      .filter(([_, suite]) => suite.validUserStories.includes(tag))
-      .map(([id]) => id);
-
-    if (matchingSuites.length === 0) {
-      console.warn(`No test suites found for tag: ${tag}`);
-      return [];
-    }
-
-    return await this.runSuites(matchingSuites, options);
-  }
-
-  /**
-   * 获取所有结果
-   * @returns {Array<UnifiedTestResult>}
-   */
   getResults() {
     return Array.from(this.results.values());
   }
 
-  /**
-   * 获取汇总
-   * @returns {Object}
-   */
   getSummary() {
     const results = this.getResults();
     const total = results.length;
-    const passed = results.filter(r => r.status === 'passed').length;
-    const failed = results.filter(r => r.status === 'failed').length;
-    const skipped = results.filter(r => r.status === 'skipped').length;
-    const errors = results.filter(r => r.status === 'error').length;
+    const passed = results.filter((result) => result.status === 'passed').length;
+    const failed = results.filter((result) => result.status === 'failed').length;
+    const skipped = results.filter((result) => result.status === 'skipped').length;
+    const errors = results.filter((result) => result.status === 'error').length;
 
     return {
       total,
@@ -265,25 +139,17 @@ class UnifiedTestRunner {
       failed,
       skipped,
       errors,
-      passRate: total > 0 ? (passed / total) * 100 : 0,
-      results
+      success: failed === 0 && errors === 0,
+      results: results.map((result) => result.toJSON())
     };
-  }
-
-  /**
-   * 清除结果
-   */
-  clearResults() {
-    this.results.clear();
   }
 }
 
-// 导出单例和类
 const unifiedTestRunner = new UnifiedTestRunner();
 
 module.exports = {
-  unifiedTestRunner,
-  UnifiedTestRunner,
+  TEST_SUITES,
   UnifiedTestResult,
-  TEST_SUITES
+  UnifiedTestRunner,
+  unifiedTestRunner
 };

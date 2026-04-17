@@ -222,7 +222,7 @@ class TestValidatorService {
   }
 
   /**
-   * 运行统一测试套件 (US-001 到 US-004)
+   * 运行当前启用的统一测试套件
    * @param {Object} options - 运行选项
    * @returns {Promise<Object>} 测试结果
    */
@@ -233,7 +233,7 @@ class TestValidatorService {
       throw new Error('Unified test runner not available');
     }
 
-    console.log('[TestValidatorService] Running unified test suite (US-001 to US-004)...');
+    console.log('[TestValidatorService] Running unified validation suites...');
 
     const results = await unifiedTestRunner.runAllSuites(options);
     const summary = unifiedTestRunner.getSummary();
