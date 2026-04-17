@@ -23,3 +23,7 @@ CODEBUDDY.md
 opencode.json
 .workbuddy/auto-*.md
 .workbuddy/dev-*.log
+.workbuddy/autopilot-*.json
+.workbuddy/autopilot-*.md
+.workbuddy/autopilot-*.log
+.workbuddy/autopilot-*.prompt.md

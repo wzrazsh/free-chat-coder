@@ -17,7 +17,7 @@ FILTERED_CRONTAB="$(printf '%s\n' "$CURRENT_CRONTAB" | awk -v start="$START_MARK
 
 BLOCK="$(cat <<EOF
 $START_MARKER
-*/30 * * * * $REPO_ROOT/scripts/cron-dev-cycle.sh >> $REPO_ROOT/.workbuddy/dev-cycle.log 2>&1
+*/5 * * * * $REPO_ROOT/scripts/dev-autopilot.sh >> $REPO_ROOT/.workbuddy/dev-autopilot.log 2>&1
 20 2 * * * $REPO_ROOT/scripts/nightly-validate.sh >> $REPO_ROOT/.workbuddy/dev-nightly.log 2>&1
 $END_MARKER
 EOF

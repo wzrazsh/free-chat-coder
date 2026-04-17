@@ -105,7 +105,7 @@ node scripts/sync-config.js
 
 ## 定时开发任务
 
-如果希望用本机定时任务持续刷新项目状态并执行夜间验证，可以安装仓库自带的 cron 配置：
+如果希望用本机定时任务持续推进开发并执行夜间验证，可以安装仓库自带的 cron 配置：
 
 ```bash
 ./scripts/install-dev-cron.sh
@@ -113,8 +113,10 @@ node scripts/sync-config.js
 
 安装后会创建两类任务：
 
-- 每 30 分钟刷新一次 `.workbuddy/auto-dev-status.md`
+- 每 5 分钟运行一次自动开发主管：检查当前任务是否仍在运行、是否卡死；没有运行中的任务时自动拉起新的 `codex exec`
 - 每天凌晨 2:20 生成一次 `.workbuddy/auto-nightly-validation.md`
+
+自动开发主管的动态状态保存在 `.workbuddy/autopilot-state.json`，最近一次模型输出保存在 `.workbuddy/autopilot-last-message.md`。
 
 ## 验证建议
 
