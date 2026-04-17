@@ -340,6 +340,12 @@ function buildNextSteps(authSummary, failureSummary) {
   if (!authSummary.ready) {
     suggestions.push('Run `node scripts/onboard-deepseek-web.js --profile .browser-profile --launch-browser` and log in with the workspace browser profile if auth is still missing.');
   }
+  if (authSummary.reason === 'logged_out' || errorCode === 'DEEPSEEK_AUTH_LOGGED_OUT') {
+    suggestions.push('The workspace browser profile is on the DeepSeek sign-in page, not the authenticated chat app. Log in until the chat composer is visible, then rerun onboarding.');
+  }
+  if (authSummary.reason === 'telemetry_token' || errorCode === 'DEEPSEEK_AUTH_TOKEN_SOURCE_INVALID') {
+    suggestions.push('The saved bearer source looks like a telemetry token, not a chat auth token. Reload the authenticated DeepSeek chat app, then rerun onboarding from that page.');
+  }
   if (authSummary.reason === 'challenge_page' || errorCode === 'DEEPSEEK_AUTH_CHALLENGED') {
     suggestions.push('Open `https://chat.deepseek.com/` in the workspace browser profile, refresh until the full chat app loads instead of the AWS WAF challenge page, then rerun onboarding.');
   }

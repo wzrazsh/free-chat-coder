@@ -260,6 +260,72 @@ async function runChallengeAuthScenario() {
   }
 }
 
+async function runLoggedOutAuthScenario() {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'fcc-deepseek-probe-logged-out-'));
+  const storePath = path.join(tempDir, 'deepseek-web-auth.json');
+  writeAuthSnapshot(storePath, {
+    auth: {
+      bearerSource: 'localStorage:localStorage.userToken',
+      pageUrl: 'https://chat.deepseek.com/sign_in'
+    },
+    debug: {
+      authPageDetected: true,
+      authPageReason: 'auth_path:/sign_in'
+    }
+  });
+
+  try {
+    const probeResult = await runProbe([
+      '--store-path',
+      storePath,
+      '--json'
+    ]);
+
+    assert.notStrictEqual(probeResult.status, 0, probeResult.stdout);
+
+    const output = JSON.parse(probeResult.stdout);
+    assert.strictEqual(output.ok, false);
+    assert.strictEqual(output.auth.ready, false);
+    assert.strictEqual(output.auth.reason, 'logged_out');
+    assert.strictEqual(output.auth.authPageReason, 'auth_path:/sign_in');
+    assert.strictEqual(output.probe.ok, false);
+    assert.strictEqual(output.probe.error.code, 'DEEPSEEK_AUTH_LOGGED_OUT');
+    assert.ok(output.nextSteps.some((step) => step.includes('sign-in page')));
+  } finally {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
+}
+
+async function runTelemetryTokenScenario() {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'fcc-deepseek-probe-telemetry-token-'));
+  const storePath = path.join(tempDir, 'deepseek-web-auth.json');
+  writeAuthSnapshot(storePath, {
+    auth: {
+      bearerSource: 'localStorage:localStorage.__tea_cache_tokens_20006317'
+    }
+  });
+
+  try {
+    const probeResult = await runProbe([
+      '--store-path',
+      storePath,
+      '--json'
+    ]);
+
+    assert.notStrictEqual(probeResult.status, 0, probeResult.stdout);
+
+    const output = JSON.parse(probeResult.stdout);
+    assert.strictEqual(output.ok, false);
+    assert.strictEqual(output.auth.ready, false);
+    assert.strictEqual(output.auth.reason, 'telemetry_token');
+    assert.strictEqual(output.probe.ok, false);
+    assert.strictEqual(output.probe.error.code, 'DEEPSEEK_AUTH_TOKEN_SOURCE_INVALID');
+    assert.ok(output.nextSteps.some((step) => step.includes('telemetry token')));
+  } finally {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
+}
+
 async function runInvalidTokenScenario() {
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'fcc-deepseek-probe-invalid-token-'));
   const storePath = path.join(tempDir, 'deepseek-web-auth.json');
@@ -296,6 +362,8 @@ async function main() {
   await runSuccessScenario();
   await runMissingAuthScenario();
   await runChallengeAuthScenario();
+  await runLoggedOutAuthScenario();
+  await runTelemetryTokenScenario();
   await runInvalidTokenScenario();
   console.log('PASS test-deepseek-provider-probe');
 }

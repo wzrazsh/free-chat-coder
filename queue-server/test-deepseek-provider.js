@@ -208,6 +208,66 @@ async function main() {
       assert.strictEqual(error.details.challengeReason, 'max_challenge_attempts_exceeded');
     }
 
+    writeAuthSnapshot(storePath, {
+      auth: {
+        bearerToken: 'stale-auth-token',
+        bearerSource: 'localStorage:localStorage.userToken',
+        pageUrl: 'https://chat.deepseek.com/sign_in'
+      },
+      debug: {
+        authPageDetected: true,
+        authPageReason: 'auth_path:/sign_in'
+      }
+    });
+    const loggedOutInspection = deepseekWebProvider.inspectAuthState(storePath);
+    assert.strictEqual(loggedOutInspection.ready, false);
+    assert.strictEqual(loggedOutInspection.reason, 'logged_out');
+    assert.strictEqual(loggedOutInspection.authPageReason, 'auth_path:/sign_in');
+    assert.deepStrictEqual(loggedOutInspection.missing, ['bearerToken']);
+
+    try {
+      await providerRegistry.executeTask({
+        id: 'task-deepseek-auth-logged-out',
+        prompt: 'hello',
+        options: {
+          provider: 'deepseek-web',
+          authStorePath: storePath
+        }
+      });
+      assert.fail('Expected deepseek-web execution to fail when auth snapshot was captured from the sign-in page.');
+    } catch (error) {
+      assert.strictEqual(error.code, 'DEEPSEEK_AUTH_LOGGED_OUT');
+      assert.strictEqual(error.details.reason, 'logged_out');
+      assert.strictEqual(error.details.authPageReason, 'auth_path:/sign_in');
+    }
+
+    writeAuthSnapshot(storePath, {
+      auth: {
+        bearerSource: 'localStorage:localStorage.__tea_cache_tokens_20006317',
+        pageUrl: 'https://chat.deepseek.com/'
+      }
+    });
+    const telemetryInspection = deepseekWebProvider.inspectAuthState(storePath);
+    assert.strictEqual(telemetryInspection.ready, false);
+    assert.strictEqual(telemetryInspection.reason, 'telemetry_token');
+    assert.strictEqual(telemetryInspection.bearerSource, 'localStorage:localStorage.__tea_cache_tokens_20006317');
+
+    try {
+      await providerRegistry.executeTask({
+        id: 'task-deepseek-auth-telemetry-token',
+        prompt: 'hello',
+        options: {
+          provider: 'deepseek-web',
+          authStorePath: storePath
+        }
+      });
+      assert.fail('Expected deepseek-web execution to fail when auth snapshot bearer source is telemetry-only.');
+    } catch (error) {
+      assert.strictEqual(error.code, 'DEEPSEEK_AUTH_TOKEN_SOURCE_INVALID');
+      assert.strictEqual(error.details.reason, 'telemetry_token');
+      assert.strictEqual(error.details.bearerSource, 'localStorage:localStorage.__tea_cache_tokens_20006317');
+    }
+
     writeAuthSnapshot(storePath);
     const fakeServer = await createFakeChatServer();
 

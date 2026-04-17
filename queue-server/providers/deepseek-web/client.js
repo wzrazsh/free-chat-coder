@@ -3,6 +3,9 @@ const https = require('https');
 
 const {
   DEFAULT_STORE_PATH,
+  getAuthPageReason,
+  isAuthPageUrl,
+  isRejectedBearerSource,
   loadAuthState
 } = require('./auth');
 const {
@@ -67,6 +70,12 @@ function inspectAuthState(storePath) {
       || /aws_?waf|challenge/i.test(String(auth.bearerSource || ''))
   );
   const challengeReason = authState?.debug?.challengeReason || null;
+  const authPageDetected = Boolean(
+    authState?.debug?.authPageDetected
+      || isAuthPageUrl(auth.pageUrl)
+  );
+  const authPageReason = authState?.debug?.authPageReason || getAuthPageReason(auth.pageUrl);
+  const invalidTokenSource = isRejectedBearerSource(auth.bearerSource);
 
   if (challengeDetected) {
     return {
@@ -78,6 +87,32 @@ function inspectAuthState(storePath) {
       pageUrl: auth.pageUrl || null,
       profilePath: authState.profilePath || null,
       challengeReason
+    };
+  }
+
+  if (authPageDetected) {
+    return {
+      ready: false,
+      storePath: resolvedStorePath,
+      reason: 'logged_out',
+      missing: ['bearerToken'],
+      capturedAt: authState.capturedAt || authState.savedAt || null,
+      pageUrl: auth.pageUrl || null,
+      profilePath: authState.profilePath || null,
+      authPageReason
+    };
+  }
+
+  if (invalidTokenSource) {
+    return {
+      ready: false,
+      storePath: resolvedStorePath,
+      reason: 'telemetry_token',
+      missing: ['bearerToken'],
+      capturedAt: authState.capturedAt || authState.savedAt || null,
+      pageUrl: auth.pageUrl || null,
+      profilePath: authState.profilePath || null,
+      bearerSource: auth.bearerSource || null
     };
   }
 
@@ -103,6 +138,24 @@ function assertAuthReady(storePath) {
     throw createProviderError(
       'DEEPSEEK_AUTH_CHALLENGED',
       `DeepSeek Web auth snapshot was captured from the AWS WAF challenge page, not an authenticated chat session. ${onboardingHint}`,
+      authSummary,
+      503
+    );
+  }
+
+  if (authSummary.reason === 'logged_out') {
+    throw createProviderError(
+      'DEEPSEEK_AUTH_LOGGED_OUT',
+      `DeepSeek Web auth snapshot was captured from the sign-in page instead of the authenticated chat app. ${onboardingHint}`,
+      authSummary,
+      503
+    );
+  }
+
+  if (authSummary.reason === 'telemetry_token') {
+    throw createProviderError(
+      'DEEPSEEK_AUTH_TOKEN_SOURCE_INVALID',
+      `DeepSeek Web auth snapshot captured a telemetry token source (${authSummary.bearerSource || 'unknown source'}) instead of a usable chat token. ${onboardingHint}`,
       authSummary,
       503
     );
