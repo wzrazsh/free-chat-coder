@@ -24,6 +24,22 @@ Before making decisions, read:
    - installation, diagnostics, or observability hardening
    - the smallest product feature that removes a real usage gap
 
+## Session policy
+
+- Treat every normal scheduled run as a brand-new session.
+- Do not rely on any previous chat history that is not included in the current prompt or repository files.
+- Use recovery context only for repair work, blocked runs, or exception handling.
+- If the current run is a fresh feature or product task, ignore old conversational drift and rebuild context from the required files.
+
+## Task protocol
+
+1. Read the required context and identify the single highest-priority unfinished task.
+2. Restate that task for yourself with goal, target files, acceptance criteria, and verification plan.
+3. Execute one validated unit of work with the smallest useful scope.
+4. Run focused checks that prove the change or diagnosis.
+5. If verified, commit it. If blocked, leave concrete evidence and the next repair step.
+6. End by naming the best next task so the following fresh session can continue cleanly.
+
 ## Working rules
 
 - Do real work, not just analysis.

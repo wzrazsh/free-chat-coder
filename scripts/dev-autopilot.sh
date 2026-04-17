@@ -187,6 +187,25 @@ build_prompt_file() {
     echo "- Branch: $branch"
     echo "- Last commit: $last_commit"
     echo
+    echo "## Session handling"
+    echo
+    if [ "$mode" = "recovery" ]; then
+      echo "- This run is recovery-oriented. You may reuse the recovery context, previous logs, and the previous Codex message to repair or continue the interrupted task."
+      echo "- Keep the scope anchored to the failure or blocked task before switching to a new backlog item."
+    else
+      echo "- This run must be treated as a fresh session."
+      echo "- Rebuild context only from the repository files and the prompt sections included here."
+      echo "- Do not assume any earlier conversation state unless the current prompt explicitly includes it."
+    fi
+    echo
+    echo "## Required execution steps"
+    echo
+    echo "1. Read the required context files."
+    echo "2. Identify the single best current task with goal, files, acceptance, and verification."
+    echo "3. Complete one validated unit of progress."
+    echo "4. Commit verified changes or leave a concrete blocker with evidence."
+    echo "5. State the next best task for the following fresh session."
+    echo
     echo "## Current git status"
     echo
     if [ -n "$status_summary" ]; then
