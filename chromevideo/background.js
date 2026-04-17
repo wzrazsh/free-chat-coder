@@ -508,9 +508,12 @@ const HEARTBEAT_ALARM_NAME = 'solo-coder-service-heartbeat';
 const HEARTBEAT_PERIOD_MINUTES = 0.5; // 30 秒
 const WEB_CONSOLE_PORT = 5173;
 const SERVICE_BOOTSTRAP_STATUS_KEY = 'serviceBootstrapStatus';
+const BACKGROUND_RUNTIME_REENTRY_MS = 15000;
 let lastHeartbeatStatus = { queue: false, queuePort: null, web: false };
 let lastServiceBootstrapStatus = null;
 let serviceBootstrapPromise = null;
+let lastBackgroundRuntimeAt = 0;
+let backgroundRuntimePromise = null;
 
 /**
  * 发布最新服务状态，供 popup / sidepanel 立即刷新。
@@ -869,12 +872,60 @@ async function initializeBackgroundRuntime(reason) {
   await ensureLocalServices(reason);
 }
 
+function scheduleBackgroundRuntimeInitialization(reason, options = {}) {
+  const force = options.force === true;
+  const now = Date.now();
+
+  if (backgroundRuntimePromise) {
+    return backgroundRuntimePromise;
+  }
+
+  if (!force && now - lastBackgroundRuntimeAt < BACKGROUND_RUNTIME_REENTRY_MS) {
+    console.log('[SW] Skipping background runtime init due to cooldown:', reason);
+    return Promise.resolve(null);
+  }
+
+  backgroundRuntimePromise = initializeBackgroundRuntime(reason)
+    .catch((error) => {
+      console.error('[SW] Background runtime init failed:', reason, error);
+      return null;
+    })
+    .finally(() => {
+      lastBackgroundRuntimeAt = Date.now();
+      backgroundRuntimePromise = null;
+    });
+
+  return backgroundRuntimePromise;
+}
+
 chrome.runtime.onStartup.addListener(() => {
-  void initializeBackgroundRuntime('startup');
+  void scheduleBackgroundRuntimeInitialization('startup', { force: true });
 });
 
 chrome.runtime.onInstalled.addListener((details) => {
-  void initializeBackgroundRuntime(`installed:${details?.reason || 'unknown'}`);
+  void scheduleBackgroundRuntimeInitialization(`installed:${details?.reason || 'unknown'}`, { force: true });
+});
+
+// Some Chromium startup paths do not eagerly wake the MV3 worker until a browser
+// window or tab event arrives, so keep a lightweight bootstrap trigger here too.
+chrome.windows.onCreated.addListener((window) => {
+  if (window.type && window.type !== 'normal') {
+    return;
+  }
+
+  void scheduleBackgroundRuntimeInitialization('window-created');
+});
+
+chrome.tabs.onCreated.addListener((tab) => {
+  if (!tab) {
+    return;
+  }
+
+  if (typeof tab.url === 'string' && tab.url.startsWith('chrome-extension://')) {
+    return;
+  }
+
+  void scheduleBackgroundRuntimeInitialization('tab-created');
 });
 
 chrome.alarms.onAlarm.addListener((alarm) => {
@@ -882,7 +933,7 @@ chrome.alarms.onAlarm.addListener((alarm) => {
     return;
   }
 
-  void ensureLocalServices(`alarm:${alarm.name}`);
+  void scheduleBackgroundRuntimeInitialization(`alarm:${alarm.name}`, { force: true });
 });
 
 void ensureHeartbeatAlarm().catch((error) => {
