@@ -7,16 +7,20 @@ const path = require('path');
 const providerRegistry = require('./providers');
 const deepseekWebProvider = require('./providers/deepseek-web/client');
 
-function writeAuthSnapshot(storePath) {
+function writeAuthSnapshot(storePath, overrides = {}) {
   fs.writeFileSync(storePath, JSON.stringify({
     savedAt: new Date().toISOString(),
     capturedAt: new Date().toISOString(),
-    ready: true,
+    ready: overrides.ready !== undefined ? overrides.ready : true,
     auth: {
       userAgent: 'Fake Chromium UA',
       cookieHeader: 'ds_session=cookie-123',
       bearerToken: 'fake-bearer-token',
-      pageUrl: 'https://chat.deepseek.com/'
+      pageUrl: 'https://chat.deepseek.com/',
+      ...(overrides.auth || {})
+    },
+    debug: {
+      ...(overrides.debug || {})
     }
   }, null, 2), 'utf8');
 }
@@ -92,6 +96,31 @@ async function createFakeChatServer() {
   };
 }
 
+async function createInvalidTokenServer() {
+  const server = http.createServer((req, res) => {
+    req.resume();
+    req.on('end', () => {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({
+        code: 40003,
+        msg: 'INVALID_TOKEN',
+        data: null
+      }));
+    });
+  });
+
+  await new Promise((resolve) => {
+    server.listen(0, '127.0.0.1', resolve);
+  });
+
+  return {
+    baseUrl: `http://127.0.0.1:${server.address().port}`,
+    async close() {
+      await new Promise((resolve) => server.close(resolve));
+    }
+  };
+}
+
 async function main() {
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'fcc-deepseek-provider-'));
   const storePath = path.join(tempDir, 'deepseek-web-auth.json');
@@ -148,6 +177,37 @@ async function main() {
       assert.strictEqual(error.details.storePath, storePath);
     }
 
+    writeAuthSnapshot(storePath, {
+      auth: {
+        bearerSource: 'localStorage:localStorage.aws_waf_token_challenge_attempts'
+      },
+      debug: {
+        challengeDetected: true,
+        challengeReason: 'max_challenge_attempts_exceeded'
+      }
+    });
+    const challengedInspection = deepseekWebProvider.inspectAuthState(storePath);
+    assert.strictEqual(challengedInspection.ready, false);
+    assert.strictEqual(challengedInspection.reason, 'challenge_page');
+    assert.strictEqual(challengedInspection.challengeReason, 'max_challenge_attempts_exceeded');
+    assert.deepStrictEqual(challengedInspection.missing, ['bearerToken']);
+
+    try {
+      await providerRegistry.executeTask({
+        id: 'task-deepseek-auth-challenged',
+        prompt: 'hello',
+        options: {
+          provider: 'deepseek-web',
+          authStorePath: storePath
+        }
+      });
+      assert.fail('Expected deepseek-web execution to fail when auth snapshot is still on the AWS WAF challenge page.');
+    } catch (error) {
+      assert.strictEqual(error.code, 'DEEPSEEK_AUTH_CHALLENGED');
+      assert.strictEqual(error.details.reason, 'challenge_page');
+      assert.strictEqual(error.details.challengeReason, 'max_challenge_attempts_exceeded');
+    }
+
     writeAuthSnapshot(storePath);
     const fakeServer = await createFakeChatServer();
 
@@ -179,6 +239,30 @@ async function main() {
       assert.strictEqual(fakeServer.requests[1].body.stream, true);
     } finally {
       await fakeServer.close();
+    }
+
+    const invalidTokenServer = await createInvalidTokenServer();
+    try {
+      await providerRegistry.executeTask({
+        id: 'task-deepseek-invalid-token',
+        prompt: 'hello from queue-server',
+        options: {
+          provider: 'deepseek-web',
+          authStorePath: storePath,
+          deepseekWeb: {
+            baseUrl: invalidTokenServer.baseUrl,
+            endpointPaths: ['/api/chat'],
+            timeoutMs: 2000
+          }
+        }
+      });
+      assert.fail('Expected deepseek-web execution to surface INVALID_TOKEN as an auth failure.');
+    } catch (error) {
+      assert.strictEqual(error.code, 'DEEPSEEK_AUTH_INVALID');
+      assert.strictEqual(error.details.reason, 'INVALID_TOKEN');
+      assert.ok(String(error.details.bodyPreview || '').includes('INVALID_TOKEN'));
+    } finally {
+      await invalidTokenServer.close();
     }
 
     console.log('PASS test-deepseek-provider');

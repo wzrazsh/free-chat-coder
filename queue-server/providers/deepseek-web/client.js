@@ -62,6 +62,24 @@ function inspectAuthState(storePath) {
   const auth = authState.auth || {};
   const missing = ['cookieHeader', 'bearerToken', 'userAgent']
     .filter((field) => !auth[field]);
+  const challengeDetected = Boolean(
+    authState?.debug?.challengeDetected
+      || /aws_?waf|challenge/i.test(String(auth.bearerSource || ''))
+  );
+  const challengeReason = authState?.debug?.challengeReason || null;
+
+  if (challengeDetected) {
+    return {
+      ready: false,
+      storePath: resolvedStorePath,
+      reason: 'challenge_page',
+      missing: ['bearerToken'],
+      capturedAt: authState.capturedAt || authState.savedAt || null,
+      pageUrl: auth.pageUrl || null,
+      profilePath: authState.profilePath || null,
+      challengeReason
+    };
+  }
 
   return {
     ready: missing.length === 0 && authState.ready !== false,
@@ -81,6 +99,15 @@ function assertAuthReady(storePath) {
   }
 
   const onboardingHint = 'Run `node scripts/onboard-deepseek-web.js --profile .browser-profile --launch-browser`, then log in via the workspace browser profile if auth is still missing.';
+  if (authSummary.reason === 'challenge_page') {
+    throw createProviderError(
+      'DEEPSEEK_AUTH_CHALLENGED',
+      `DeepSeek Web auth snapshot was captured from the AWS WAF challenge page, not an authenticated chat session. ${onboardingHint}`,
+      authSummary,
+      503
+    );
+  }
+
   if (authSummary.reason === 'missing_snapshot') {
     throw createProviderError(
       'DEEPSEEK_AUTH_REQUIRED',
@@ -194,6 +221,18 @@ function resolveBaseUrl(task, options = {}) {
 
 function cloneJson(value) {
   return JSON.parse(JSON.stringify(value));
+}
+
+function safeJsonParse(value) {
+  if (typeof value !== 'string') {
+    return null;
+  }
+
+  try {
+    return JSON.parse(value);
+  } catch (error) {
+    return null;
+  }
 }
 
 function buildRequestPayload(task, options = {}) {
@@ -379,6 +418,30 @@ function buildResponseError(response, task, endpointPath) {
   );
 }
 
+function buildApiResponseError(response, task, endpointPath, payload) {
+  const apiCode = payload?.code != null ? String(payload.code) : null;
+  const reason = String(payload?.msg || payload?.message || '').trim() || null;
+  const authInvalid = apiCode === '40003' || /INVALID_TOKEN/i.test(reason || '');
+
+  return createProviderError(
+    authInvalid ? 'DEEPSEEK_AUTH_INVALID' : 'DEEPSEEK_API_ERROR',
+    authInvalid
+      ? 'DeepSeek Web rejected the captured auth token.'
+      : `DeepSeek Web returned an API error${apiCode ? ` (${apiCode})` : ''}.`,
+    {
+      stage: 'http-response',
+      taskId: task?.id || null,
+      endpointPath,
+      statusCode: response.statusCode,
+      contentType: response?.headers?.['content-type'] || null,
+      apiCode,
+      reason,
+      bodyPreview: redactPreview(response.body)
+    },
+    authInvalid ? 503 : 502
+  );
+}
+
 async function dispatchRequest(task, authState, options = {}) {
   const baseUrl = resolveBaseUrl(task, options);
   const endpointPaths = resolveEndpointPaths(task, options);
@@ -412,6 +475,14 @@ async function dispatchRequest(task, authState, options = {}) {
         continue;
       }
       throw lastError;
+    }
+
+    const apiPayload = safeJsonParse(response.body);
+    if (apiPayload && typeof apiPayload === 'object' && !Array.isArray(apiPayload)) {
+      const reason = String(apiPayload.msg || apiPayload.message || '').trim();
+      if (apiPayload.code != null || reason) {
+        throw buildApiResponseError(response, task, endpointPath, apiPayload);
+      }
     }
 
     const parsed = parseChatResponse(response);

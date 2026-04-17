@@ -11,7 +11,7 @@ const priorities = [
   {
     id: 'P0-3',
     title: '引入 DeepSeek Web Zero-Token Provider',
-    reason: '登录态捕获、最小 HTTP transport 和 auto_evolve 默认 provider 已补齐，但仍需在真实登录态上完成 provider 验证，并在接口不匹配时固化请求契约，才能真正降低文本任务对页面 DOM 的依赖。',
+    reason: '真实 `.browser-profile` 登录态已能稳定捕获 `cookie / userToken / userAgent`，但 live probe 仍在 `/api/v0/chat/completion` 收到 HTTP 200 + `{\"code\":40003,\"msg\":\"INVALID_TOKEN\"}`，下一步需要比对浏览器真实请求并固化请求契约。',
     files: [
       'doc/deepseek-zero-token-integration-20260417.md',
       'queue-server/providers/deepseek-web/',
@@ -26,7 +26,7 @@ const priorities = [
     ],
     steps: [
       '先用真实 `.browser-profile` 登录态运行 `node scripts/onboard-deepseek-web.js --profile .browser-profile --launch-browser`，再执行 `node scripts/verify-deepseek-web-provider.js --prompt "Reply with exactly: FCC_DEEPSEEK_OK"` 做一次真实 provider 验证。',
-      '如果 probe 返回 404 / 405 / response-empty，再优先固化 `queue-server/providers/deepseek-web/client.js` 的 endpoint / requestBody / headers 契约。',
+      '如果 probe 返回 `DEEPSEEK_AUTH_INVALID` / `INVALID_TOKEN`，优先比对浏览器真实请求里的 headers / body / endpoint，再固化 `queue-server/providers/deepseek-web/client.js` 的请求契约。',
       'provider 实测稳定后，再继续补会话/UI 可视化或更广的端到端回归 coverage。'
     ]
   },
@@ -189,7 +189,7 @@ async function main() {
     '- 当前阶段应定义为“稳定化 + 产品化”，而不是继续堆原型能力。',
     '- 浏览器启动场景下服务自动拉起已在 2026-04-17 完成真实验证，并已补齐可复用的端到端回归脚本。',
     '- 安装自检命令已在 2026-04-17 补齐，可直接输出扩展 ID、Native Host 安装位置、端口状态与修复建议。',
-    '- P0-3 已进入 Phase 3 验证阶段：登录态捕获、最小 DeepSeek Web HTTP transport 和 `auto_evolve` 默认 provider 已补齐，下一步应做真实登录态 provider 验证，并在接口不匹配时固化请求契约。',
+    '- P0-3 已进入 Phase 3 请求契约验证阶段：真实 `.browser-profile` 已可抓到 `cookie / userToken / userAgent`，当前剩余 blocker 是 live probe 仍返回 HTTP 200 + `INVALID_TOKEN`，需要继续对齐浏览器真实请求契约。',
     '',
     '## 最近完成',
     '',
@@ -200,6 +200,7 @@ async function main() {
     '- P0-3 已完成首个 Phase 2 单元：`queue-server/providers/deepseek-web/` 现已具备最小 HTTP transport、JSON/SSE 响应解析、端点回退、本机 auth snapshot 复用，以及 provider session 元数据写回任务/会话更新的基础能力；并已补齐本地 fake-server 验证。',
     '- P0-3 已完成 Phase 3 首个切换：`auto_evolve` 任务现已默认优先使用 `deepseek-web`，失败时会明确回退到 `extension-dom`。',
     '- P0-3 已补齐 live provider probe CLI：`scripts/verify-deepseek-web-provider.js` 可复用本机 auth snapshot 发起一次真实文本问答，并输出脱敏诊断结果。',
+    '- P0-3 已补强 live auth 诊断：onboarding 现在会拒绝 AWS WAF challenge 伪 token，probe 也会把 HTTP 200 + `INVALID_TOKEN` 显式标记为 `DEEPSEEK_AUTH_INVALID`，不再误报为 `response-empty`。',
     '- `scripts/nightly-validate.sh` 已接入该回归测试，在具备浏览器 / Xvfb / 依赖时可自动执行。',
     '',
     '## 当前最高优先任务',
@@ -237,9 +238,10 @@ async function main() {
   lines.push('## 下一次进入会话时建议先做的事');
   lines.push('');
   lines.push('- 先读本文件、`README.md` 和 `git status --short`。');
-  lines.push('- 直接继续 P0-3：先读 `doc/deepseek-zero-token-integration-20260417.md`，再运行 `node scripts/onboard-deepseek-web.js --profile .browser-profile --launch-browser` 和 `node scripts/verify-deepseek-web-provider.js --prompt "Reply with exactly: FCC_DEEPSEEK_OK"` 做真实 provider 验证。');
+  lines.push('- 直接继续 P0-3：先读 `doc/deepseek-zero-token-integration-20260417.md`，再运行 `node scripts/onboard-deepseek-web.js --profile .browser-profile --launch-browser` 和 `node scripts/verify-deepseek-web-provider.js --prompt "Reply with exactly: FCC_DEEPSEEK_OK"` 复现 live `INVALID_TOKEN`。');
   lines.push('- 优先检查 `queue-server/providers/deepseek-web/`、`queue-server/routes/tasks.js`、`queue-server/websocket/handler.js`、`queue-server/conversations/store.js`。');
-  lines.push('- 如果 probe 返回 404 / 405 / response-empty，先把 `queue-server/providers/deepseek-web/client.js` 的请求契约固化，再扩大真实流量覆盖。');
+  lines.push('- 重点比对浏览器真实请求和 `queue-server/providers/deepseek-web/client.js`：确认 endpoint、Authorization/Cookie 组合、额外 headers，以及 request body 字段是否和页面一致。');
+  lines.push('- 如果 probe 仍返回 `DEEPSEEK_AUTH_INVALID`，优先固化请求契约或调整 token/header 来源；只有当 live probe 成功后，再扩大真实流量覆盖。');
   lines.push('- 功能改动完成后，先跑聚焦验证，再提交。');
   lines.push('');
 

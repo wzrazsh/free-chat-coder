@@ -315,6 +315,7 @@ function buildStorageInspectionExpression() {
   const lines = [
     '(() => {',
     '  const TOKEN_RE = /bearer|authorization|auth|token|jwt|session/i;',
+    '  const CHALLENGE_TEXT_RE = /not a robot|max challenge attempts exceeded|aws_?waf|awswafintegration|challenge-container/i;',
     '  const records = [];',
     '  const seen = new Set();',
     '  const MAX_VALUE_LENGTH = 4096;',
@@ -380,6 +381,8 @@ function buildStorageInspectionExpression() {
     '  }',
     '  const localStorageKeys = inspectStorage("localStorage", window.localStorage);',
     '  const sessionStorageKeys = inspectStorage("sessionStorage", window.sessionStorage);',
+    '  const bodyText = (document.body?.innerText || "").slice(0, 2000);',
+    '  const bodyHtml = (document.body?.innerHTML || "").slice(0, 2000);',
     '  walk("window", "window.__NEXT_DATA__", window.__NEXT_DATA__ || null, 0);',
     '  walk("window", "window.__NUXT__", window.__NUXT__ || null, 0);',
     '  return {',
@@ -389,6 +392,14 @@ function buildStorageInspectionExpression() {
     '    userAgent: navigator.userAgent,',
     '    localStorageKeys,',
     '    sessionStorageKeys,',
+    '    challengeDetected: Boolean(document.querySelector("#challenge-container") || CHALLENGE_TEXT_RE.test(bodyText) || CHALLENGE_TEXT_RE.test(bodyHtml)),',
+    '    challengeReason: /max challenge attempts exceeded/i.test(bodyText)',
+    '      ? "max_challenge_attempts_exceeded"',
+    '      : document.querySelector("#challenge-container") || /awswafintegration/i.test(bodyHtml)',
+    '        ? "aws_waf_challenge"',
+    '        : /not a robot/i.test(bodyText)',
+    '          ? "robot_check"',
+    '          : null,',
     '    tokenCandidates: records.slice(0, 40)',
     '  };',
     '})()'
@@ -460,6 +471,19 @@ function normalizeBearerToken(value) {
   return stringValue.replace(/^Bearer\s+/i, '') || null;
 }
 
+function isRejectedBearerCandidate(candidate) {
+  const keyPath = String(candidate?.keyPath || '').toLowerCase();
+  const value = String(candidate?.value || '');
+  const normalizedValue = value.toLowerCase();
+
+  return keyPath.includes('aws_waf')
+    || keyPath.includes('awswaf')
+    || keyPath.includes('challenge')
+    || keyPath.includes('captcha')
+    || (keyPath.includes('timestamp') && /^\d{8,}$/.test(value.trim()))
+    || normalizedValue.includes('awswafintegration');
+}
+
 function selectBearerCandidate(candidates) {
   if (!Array.isArray(candidates) || candidates.length === 0) {
     return null;
@@ -472,6 +496,7 @@ function selectBearerCandidate(candidates) {
       normalizedValue: normalizeBearerToken(candidate.value)
     }))
     .filter((candidate) => candidate.normalizedValue)
+    .filter((candidate) => !isRejectedBearerCandidate(candidate))
     .sort((left, right) => right.score - left.score);
 
   return ranked[0] || null;
@@ -491,7 +516,9 @@ function createCaptureResult(origin, profilePath) {
       browserVersion: null,
       browserWebSocketUrl: null,
       targetCount: 0,
-      deepseekTarget: null
+      deepseekTarget: null,
+      challengeDetected: false,
+      challengeReason: null
     },
     auth: {
       userAgent: null,
@@ -614,12 +641,19 @@ async function captureAuthState(options = {}) {
       result.auth.userAgent = pageState?.userAgent || version['User-Agent'] || null;
       result.auth.localStorageKeys = Array.isArray(pageState?.localStorageKeys) ? pageState.localStorageKeys : [];
       result.auth.sessionStorageKeys = Array.isArray(pageState?.sessionStorageKeys) ? pageState.sessionStorageKeys : [];
+      result.debug.challengeDetected = Boolean(pageState?.challengeDetected);
+      result.debug.challengeReason = pageState?.challengeReason || null;
+
+      if (result.debug.challengeDetected) {
+        addIssue(result, `DeepSeek page is still on the AWS WAF challenge (${result.debug.challengeReason || 'challenge_detected'}) instead of the authenticated app.`);
+        addRecommendation(result, `Open ${normalizedOrigin.origin} in the workspace browser profile, refresh until the full chat app loads, then rerun onboarding.`);
+      }
 
       const bearerCandidate = selectBearerCandidate(pageState?.tokenCandidates || []);
       if (bearerCandidate) {
         result.auth.bearerToken = bearerCandidate.normalizedValue;
         result.auth.bearerSource = `${bearerCandidate.source}:${bearerCandidate.keyPath}`;
-      } else {
+      } else if (!result.debug.challengeDetected) {
         addIssue(result, `No bearer-like token could be found in DeepSeek page storage for ${normalizedOrigin.origin}.`);
         addRecommendation(result, 'Keep the DeepSeek tab logged in and fully loaded so local/session storage is populated.');
       }
@@ -632,7 +666,12 @@ async function captureAuthState(options = {}) {
     result.auth.userAgent = version['User-Agent'] || null;
   }
 
-  result.ok = Boolean(result.auth.userAgent && result.auth.cookieHeader && result.auth.bearerToken);
+  result.ok = Boolean(
+    result.auth.userAgent
+      && result.auth.cookieHeader
+      && result.auth.bearerToken
+      && !result.debug.challengeDetected
+  );
   return result;
 }
 
@@ -655,7 +694,9 @@ function serializeAuthState(capture) {
     debug: {
       browserVersion: capture.debug.browserVersion,
       targetCount: capture.debug.targetCount,
-      deepseekTarget: capture.debug.deepseekTarget
+      deepseekTarget: capture.debug.deepseekTarget,
+      challengeDetected: capture.debug.challengeDetected,
+      challengeReason: capture.debug.challengeReason
     }
   };
 }
@@ -709,7 +750,9 @@ function summarizeCapture(capture, options = {}) {
       devToolsReachable: capture.debug.devToolsReachable,
       browserVersion: capture.debug.browserVersion,
       targetCount: capture.debug.targetCount,
-      deepseekTargetUrl: capture.debug.deepseekTarget?.url || null
+      deepseekTargetUrl: capture.debug.deepseekTarget?.url || null,
+      challengeDetected: capture.debug.challengeDetected,
+      challengeReason: capture.debug.challengeReason
     },
     auth: {
       userAgent: capture.auth.userAgent,

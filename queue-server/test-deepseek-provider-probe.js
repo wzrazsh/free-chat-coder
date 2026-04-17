@@ -8,16 +8,20 @@ const cp = require('child_process');
 const REPO_ROOT = path.resolve(__dirname, '..');
 const SCRIPT_PATH = path.join(REPO_ROOT, 'scripts', 'verify-deepseek-web-provider.js');
 
-function writeAuthSnapshot(storePath) {
+function writeAuthSnapshot(storePath, overrides = {}) {
   fs.writeFileSync(storePath, JSON.stringify({
     savedAt: new Date().toISOString(),
     capturedAt: new Date().toISOString(),
-    ready: true,
+    ready: overrides.ready !== undefined ? overrides.ready : true,
     auth: {
       userAgent: 'Fake Chromium UA',
       cookieHeader: 'ds_session=cookie-123',
       bearerToken: 'fake-bearer-token',
-      pageUrl: 'https://chat.deepseek.com/'
+      pageUrl: 'https://chat.deepseek.com/',
+      ...(overrides.auth || {})
+    },
+    debug: {
+      ...(overrides.debug || {})
     }
   }, null, 2), 'utf8');
 }
@@ -85,6 +89,31 @@ async function createFakeChatServer() {
 
   return {
     requests,
+    baseUrl: `http://127.0.0.1:${server.address().port}`,
+    async close() {
+      await new Promise((resolve) => server.close(resolve));
+    }
+  };
+}
+
+async function createInvalidTokenServer() {
+  const server = http.createServer((req, res) => {
+    req.resume();
+    req.on('end', () => {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({
+        code: 40003,
+        msg: 'INVALID_TOKEN',
+        data: null
+      }));
+    });
+  });
+
+  await new Promise((resolve) => {
+    server.listen(0, '127.0.0.1', resolve);
+  });
+
+  return {
     baseUrl: `http://127.0.0.1:${server.address().port}`,
     async close() {
       await new Promise((resolve) => server.close(resolve));
@@ -196,9 +225,78 @@ function runMissingAuthScenario() {
   });
 }
 
+async function runChallengeAuthScenario() {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'fcc-deepseek-probe-challenge-'));
+  const storePath = path.join(tempDir, 'deepseek-web-auth.json');
+  writeAuthSnapshot(storePath, {
+    auth: {
+      bearerSource: 'localStorage:localStorage.aws_waf_token_challenge_attempts'
+    },
+    debug: {
+      challengeDetected: true,
+      challengeReason: 'max_challenge_attempts_exceeded'
+    }
+  });
+
+  try {
+    const probeResult = await runProbe([
+      '--store-path',
+      storePath,
+      '--json'
+    ]);
+
+    assert.notStrictEqual(probeResult.status, 0, probeResult.stdout);
+
+    const output = JSON.parse(probeResult.stdout);
+    assert.strictEqual(output.ok, false);
+    assert.strictEqual(output.auth.ready, false);
+    assert.strictEqual(output.auth.reason, 'challenge_page');
+    assert.strictEqual(output.auth.challengeReason, 'max_challenge_attempts_exceeded');
+    assert.strictEqual(output.probe.ok, false);
+    assert.strictEqual(output.probe.error.code, 'DEEPSEEK_AUTH_CHALLENGED');
+    assert.ok(output.nextSteps.some((step) => step.includes('AWS WAF challenge page')));
+  } finally {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
+}
+
+async function runInvalidTokenScenario() {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'fcc-deepseek-probe-invalid-token-'));
+  const storePath = path.join(tempDir, 'deepseek-web-auth.json');
+  writeAuthSnapshot(storePath);
+  const invalidTokenServer = await createInvalidTokenServer();
+
+  try {
+    const probeResult = await runProbe([
+      '--store-path',
+      storePath,
+      '--base-url',
+      invalidTokenServer.baseUrl,
+      '--endpoint-path',
+      '/api/chat',
+      '--json'
+    ]);
+
+    assert.notStrictEqual(probeResult.status, 0, probeResult.stdout);
+
+    const output = JSON.parse(probeResult.stdout);
+    assert.strictEqual(output.ok, false);
+    assert.strictEqual(output.auth.ready, true);
+    assert.strictEqual(output.probe.ok, false);
+    assert.strictEqual(output.probe.error.code, 'DEEPSEEK_AUTH_INVALID');
+    assert.strictEqual(output.probe.error.reason, 'INVALID_TOKEN');
+    assert.ok(output.nextSteps.some((step) => step.includes('captured token was rejected')));
+  } finally {
+    await invalidTokenServer.close();
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
+}
+
 async function main() {
   await runSuccessScenario();
   await runMissingAuthScenario();
+  await runChallengeAuthScenario();
+  await runInvalidTokenScenario();
   console.log('PASS test-deepseek-provider-probe');
 }
 

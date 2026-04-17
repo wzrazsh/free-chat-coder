@@ -340,16 +340,22 @@ function buildNextSteps(authSummary, failureSummary) {
   if (!authSummary.ready) {
     suggestions.push('Run `node scripts/onboard-deepseek-web.js --profile .browser-profile --launch-browser` and log in with the workspace browser profile if auth is still missing.');
   }
+  if (authSummary.reason === 'challenge_page' || errorCode === 'DEEPSEEK_AUTH_CHALLENGED') {
+    suggestions.push('Open `https://chat.deepseek.com/` in the workspace browser profile, refresh until the full chat app loads instead of the AWS WAF challenge page, then rerun onboarding.');
+  }
 
   if (statusCode === 404 || statusCode === 405) {
     suggestions.push('Retry with an explicit `--endpoint-path` that matches the current DeepSeek Web request URL.');
+  }
+  if (errorCode === 'DEEPSEEK_AUTH_INVALID') {
+    suggestions.push('The captured token was rejected by the HTTP endpoint. Re-run onboarding, then compare the live browser request headers/body with `queue-server/providers/deepseek-web/client.js` before routing more traffic.');
   }
 
   if (errorCode === 'DEEPSEEK_RESPONSE_EMPTY') {
     suggestions.push('Retry with `--request-body @path/to/body.json` if the live DeepSeek request contract now requires extra payload fields.');
   }
 
-  if (errorCode === 'DEEPSEEK_HTTP_ERROR' || errorCode === 'DEEPSEEK_RESPONSE_EMPTY') {
+  if (errorCode === 'DEEPSEEK_HTTP_ERROR' || errorCode === 'DEEPSEEK_RESPONSE_EMPTY' || errorCode === 'DEEPSEEK_AUTH_INVALID') {
     suggestions.push('If the probe still fails, compare the browser network request with `queue-server/providers/deepseek-web/client.js` and update the request contract before switching more traffic.');
   }
 
@@ -384,6 +390,9 @@ function printHumanSummary(summary) {
   }
   if (!summary.auth.ready) {
     console.log(`Auth issue: ${summary.auth.reason || 'snapshot unavailable'}`);
+    if (summary.auth.challengeReason) {
+      console.log(`Challenge: ${summary.auth.challengeReason}`);
+    }
     if (summary.auth.missing.length > 0) {
       console.log(`Missing: ${summary.auth.missing.join(', ')}`);
     }
