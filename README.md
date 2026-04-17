@@ -35,6 +35,14 @@ node scripts/onboard-deepseek-web.js --profile .browser-profile
 
 该脚本会尝试附加到当前 `.browser-profile` 对应的 Chromium DevTools 端点，检查 DeepSeek 页面的 `cookie` / `bearer` / `userAgent` 是否齐全，并仅在本机把结果写入 `queue-server/data/deepseek-web-auth.json`；终端输出只显示脱敏摘要，不会直接打印敏感值。
 
+完成 onboard 后，可直接用真实登录态做一次最小 provider 验证：
+
+```bash
+node scripts/verify-deepseek-web-provider.js --prompt "Reply with exactly: FCC_DEEPSEEK_OK"
+```
+
+该命令会复用 `queue-server/data/deepseek-web-auth.json` 中保存的本机登录态，直接从 Queue Server 侧发起一次 `DeepSeek Web` 文本请求，并输出脱敏后的 endpoint / responseMode / sessionId / requestId / reply 预览。如果真实接口契约有漂移，可继续叠加 `--endpoint-path`、`--request-body @path/to/body.json`、`--header "K: V"` 或 `--json` 做定点诊断。
+
 ## 安装依赖
 
 仓库不是 workspace 模式，需要分别安装：
@@ -155,6 +163,15 @@ node test-playwright-e2e.js
 ```
 
 `node test-playwright-e2e.js` 会在干净状态下启动 Chromium + 扩展，验证 Native Host 自动拉起 `Queue Server` / `Web Console`、检查 `/health` 与 offscreen WebSocket，然后在结束后把这两个本地服务停掉。运行前请先确保 `queue-server/node_modules`、`web-console/node_modules`、`.browser-profile`、`Xvfb` 和浏览器可执行文件都已准备好，且 `Queue Server` / `Web Console` 当前未在运行。
+
+如果正在推进 `DeepSeek Web Zero-Token` provider，建议在运行自动化回归前先执行：
+
+```bash
+node scripts/onboard-deepseek-web.js --profile .browser-profile
+node scripts/verify-deepseek-web-provider.js --prompt "Reply with exactly: FCC_DEEPSEEK_OK"
+```
+
+这样可以先确认当前 `.browser-profile` 的登录态仍有效，且服务端 provider 的默认 endpoint / requestBody / headers 契约仍能完成一轮真实文本问答。
 
 如果已安装 `web-console` 依赖，再执行：
 
