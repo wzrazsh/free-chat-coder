@@ -12,6 +12,7 @@ Before making decisions, read:
 2. `.workbuddy/auto-dev-status.md`
 3. `README.md`
 4. `git status --short`
+5. Any task-specific design doc explicitly referenced by the roadmap or status snapshot
 
 ## Default priority order
 
@@ -45,6 +46,7 @@ Before making decisions, read:
 - Do real work, not just analysis.
 - Prefer one validated unit of progress per run.
 - Inspect the code before editing.
+- If the roadmap or status snapshot points to a task-specific design doc, read that doc before deciding the implementation slice.
 - After changes, run focused verification commands.
 - If the change is validated, commit it with a concise commit message.
 - If blocked, leave the repo in a diagnosable state and explain the blocker in the final message.

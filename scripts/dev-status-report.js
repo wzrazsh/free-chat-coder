@@ -9,6 +9,28 @@ const queueCandidates = [8080, 8082, 8083, 8084, 8085, 8086, 8087, 8088, 8089, 8
 
 const priorities = [
   {
+    id: 'P0-3',
+    title: '引入 DeepSeek Web Zero-Token Provider',
+    reason: '当前文本任务仍强依赖扩展驱动 DeepSeek 页面 DOM。应新增 Queue Server 内可直接执行的 zero-token provider，优先承接文本任务与自动进化，降低页面结构变更风险。',
+    files: [
+      'doc/deepseek-zero-token-integration-20260417.md',
+      'queue-server/providers/deepseek-web/',
+      'queue-server/routes/tasks.js',
+      'queue-server/websocket/handler.js',
+      'queue-server/conversations/store.js'
+    ],
+    acceptance: [
+      '能安全捕获并存储 DeepSeek Web 所需的 cookie / bearer / userAgent',
+      '新增 provider 后，Queue Server 可直接完成至少一轮 DeepSeek 文本问答',
+      '自动进化任务可优先走 deepseek-web 或在失败时明确回退到 extension-dom'
+    ],
+    steps: [
+      '先读 `doc/deepseek-zero-token-integration-20260417.md`，按 Phase 1 到 Phase 4 切分任务。',
+      '先做登录态捕获与诊断，再做最小 provider，不要一开始就同时改 UI 和自动进化链路。',
+      '每轮只提交一个可验证的最小单元，例如 onboard、最小 chat provider、自动进化切换、UI 可视化。'
+    ]
+  },
+  {
     id: 'P2-1',
     title: '整合 popup / sidepanel 的工作台能力',
     reason: '基础链路稳定后，下一步产品体验差距主要来自入口分散、状态反馈不统一。',
@@ -22,6 +44,10 @@ const priorities = [
     acceptance: [
       '服务状态、启动日志和常用操作有统一入口',
       '用户不需要在 popup 和 sidepanel 之间来回切换才能完成基本排障'
+    ],
+    steps: [
+      '仅在 zero-token provider 最小链路可用后再继续推进该项。',
+      '保持 popup / sidepanel 作为工作台入口，不要在这里承载敏感凭证。'
     ]
   },
   {
@@ -36,6 +62,10 @@ const priorities = [
     acceptance: [
       '常用任务模板和工作区配置可从主入口直接触达',
       '最近失败记录和关键日志不需要翻文件即可查看'
+    ],
+    steps: [
+      '在共享工作台稳定后再补该项，避免和 zero-token provider 并行打散精力。',
+      '失败记录优先消费已有 `queue-server/data/test-reports/` 和验证审计数据。'
     ]
   }
 ];
@@ -159,6 +189,7 @@ async function main() {
     '- 当前阶段应定义为“稳定化 + 产品化”，而不是继续堆原型能力。',
     '- 浏览器启动场景下服务自动拉起已在 2026-04-17 完成真实验证，并已补齐可复用的端到端回归脚本。',
     '- 安装自检命令已在 2026-04-17 补齐，可直接输出扩展 ID、Native Host 安装位置、端口状态与修复建议。',
+    '- 下一阶段的首要任务应切换到“DeepSeek Web Zero-Token Provider”，把文本任务从 DOM 操控抽象为可由 Queue Server 直接调用的 provider。',
     '',
     '## 最近完成',
     '',
@@ -181,6 +212,12 @@ async function main() {
     for (const item of priority.acceptance) {
       lines.push(`  - ${item}`);
     }
+    if (Array.isArray(priority.steps) && priority.steps.length > 0) {
+      lines.push('- 建议步骤：');
+      for (const step of priority.steps) {
+        lines.push(`  - ${step}`);
+      }
+    }
     lines.push('');
   }
 
@@ -197,8 +234,8 @@ async function main() {
   lines.push('## 下一次进入会话时建议先做的事');
   lines.push('');
   lines.push('- 先读本文件、`README.md` 和 `git status --short`。');
-  lines.push('- 直接进入 P2-1：在真实扩展页面验证共享 Service Workbench 的状态刷新、启动诊断和最近事件表现。');
-  lines.push('- 优先检查 `chromevideo/popup.js`、`chromevideo/sidepanel.js`、`chromevideo/utils/service-workbench.js`。');
+  lines.push('- 直接进入 P0-3：先读 `doc/deepseek-zero-token-integration-20260417.md`，从 Phase 1 的登录态捕获与诊断开始。');
+  lines.push('- 优先检查 `queue-server/providers/deepseek-web/`、`queue-server/routes/tasks.js`、`queue-server/websocket/handler.js`、`queue-server/conversations/store.js`。');
   lines.push('- 功能改动完成后，先跑聚焦验证，再提交。');
   lines.push('');
 

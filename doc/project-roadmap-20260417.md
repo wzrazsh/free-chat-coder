@@ -23,23 +23,37 @@
 
 ## 当前最主要的短板
 
-1. “打开浏览器后自动拉起本地服务”在真实验证中未生效，这是当前最直接的产品阻塞。
-2. 缺少稳定的端到端回归测试，关键链路依然依赖手工验证。
+1. 文本任务主链路仍强依赖扩展操作 DeepSeek 页面 DOM，页面结构变化会直接影响任务执行稳定性。
+2. 当前缺少一条可在 Queue Server 内直接执行的 DeepSeek provider，自动进化仍没有摆脱浏览器页面操控依赖。
 3. Native Host、扩展、Queue Server、Web Console 之间的安装和排障路径仍偏开发者视角，普通用户上手成本高。
 4. 自动进化能力已经很强，但缺少更硬的回滚、验证和风险隔离。
 5. 设计文档与现有实现存在偏差，长期维护门槛开始上升。
+
+## 当前优先专项
+
+### P0：引入 DeepSeek Web Zero-Token Provider
+
+目标：在保留扩展 DOM 自动化链路的同时，为项目新增一条 `DeepSeek Web Zero-Token` 文本执行通道，优先承接普通文本任务、自动进化和多轮工具结果回灌，降低对 DeepSeek 页面输入框、发送按钮和回复 DOM 的脆弱依赖。
+
+详细设计与实施步骤：见 `doc/deepseek-zero-token-integration-20260417.md`
+
+首批验收：
+
+1. 建立本地登录态捕获与诊断能力，能安全获取 `cookie` / `bearer` / `userAgent`
+2. 新增 `queue-server/providers/deepseek-web/` 最小 provider，可直接完成文本问答
+3. 自动进化任务可优先走 `deepseek-web`，失败时具备明确诊断或回退策略
 
 ## 后续优化方向
 
 ### P0：可用性闭环
 
-1. 修复浏览器启动即自动拉起 Queue Server / Web Console 的链路。
+1. 引入 DeepSeek Web Zero-Token Provider，降低文本任务对页面 DOM 的强依赖。
 2. 增加扩展启动诊断面板，明确显示 Native Host、Queue Server、Web Console 的失败原因。
 3. 提供一键环境自检脚本，覆盖扩展加载、Native Host 安装、端口占用和依赖完整性。
 
 ### P1：稳定性与回归防护
 
-1. 建立扩展 + Native Host + Queue Server 的端到端回归测试。
+1. 建立 Zero-Token provider + 扩展 + Native Host + Queue Server 的端到端回归测试。
 2. 给自动进化链路增加预执行验证、失败回滚和结果审计。
 3. 将关键健康检查和前端构建验证纳入定时任务与夜间巡检。
 
