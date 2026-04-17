@@ -88,6 +88,41 @@ async function run() {
     assert.strictEqual(latestStatus.rollback.attempted, true, 'Rolled back evolution should record rollback attempt');
     assert.strictEqual(latestStatus.rollback.success, true, 'Rollback attempt should succeed');
 
+    fs.writeFileSync(fixturePath, 'module.exports = { version: 6 };\n', 'utf8');
+
+    const originalRollback = rollbackManager.rollback;
+    const rollbackFailureId = `test-rollback-failure-${Date.now()}`;
+
+    try {
+      rollbackManager.rollback = async () => ({
+        success: false,
+        error: 'Simulated rollback failure'
+      });
+
+      const rollbackFailureResult = await evolveExecutor.evolveExtension({
+        file: fixtureRelativePath,
+        code: 'module.exports = { version: 7 };\n// 请在现有 content.js 中手动合并以下改动\n',
+        evolutionId: rollbackFailureId,
+        riskLevel: 'low'
+      });
+
+      assert.strictEqual(rollbackFailureResult.success, false, 'Rollback failure should still fail the evolution');
+      assert.match(rollbackFailureResult.error, /rollback failed/i, 'Rollback failure should be called out explicitly');
+      assert.match(rollbackFailureResult.error, /Simulated rollback failure/, 'Rollback failure should include the underlying rollback error');
+      assert.match(fs.readFileSync(fixturePath, 'utf8'), /version: 7/, 'When rollback fails the candidate content should remain for diagnosis');
+
+      latestStatus = validationService.getLatestEvolutionStatus();
+      assert.strictEqual(latestStatus.evolutionId, rollbackFailureId, 'Latest validation status should match rollback failure evolution');
+      assert.strictEqual(latestStatus.success, false, 'Rollback failure evolution should be marked unsuccessful');
+      assert.strictEqual(latestStatus.postChange.success, false, 'Rollback failure should still expose the failed post-change validation');
+      assert.strictEqual(latestStatus.rollback.attempted, true, 'Rollback failure should record that rollback was attempted');
+      assert.strictEqual(latestStatus.rollback.success, false, 'Rollback failure should be recorded explicitly');
+      assert.match(latestStatus.summary, /Rollback failed/i, 'Rollback failure should be reflected in the audit summary');
+    } finally {
+      rollbackManager.rollback = originalRollback;
+      rollbackManager.discard(rollbackFailureId);
+    }
+
     rollbackManager.discard(successId);
     rollbackManager.discard(rollbackId);
 

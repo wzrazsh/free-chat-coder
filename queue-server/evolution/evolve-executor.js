@@ -234,6 +234,15 @@ const evolveExecutor = {
     };
   },
 
+  buildRollbackFailure(errorMessage, rollbackSummary, fallbackMessage) {
+    const rollbackError = rollbackSummary?.error || fallbackMessage || 'Unknown rollback error';
+
+    return {
+      error: `${errorMessage} Rollback failed: ${rollbackError}`,
+      summary: `${errorMessage} Rollback failed: ${rollbackError}`
+    };
+  },
+
   async applyCodeChange({ action, targetPath, code, riskLevel, evolutionId, successResponse }) {
     if (!code) {
       return { success: false, error: 'Missing code parameter' };
@@ -332,12 +341,30 @@ const evolveExecutor = {
         });
         audit.rollback = this.summarizeRollback(rollbackResult);
         audit.completedAt = new Date().toISOString();
-        audit.summary = 'Post-change validation failed. Change was rolled back.';
+        const validationFailureMessage = `${action} failed post-change validation.`;
+
+        if (audit.rollback.success) {
+          audit.summary = 'Post-change validation failed. Change was rolled back.';
+        } else {
+          const rollbackFailure = this.buildRollbackFailure(
+            validationFailureMessage,
+            audit.rollback,
+            'Validation failed after writing the candidate change.'
+          );
+          audit.summary = rollbackFailure.summary;
+        }
+
         this.recordEvolutionStatus(audit);
 
         return {
           success: false,
-          error: `${action} failed validation and was rolled back`,
+          error: audit.rollback.success
+            ? `${action} failed validation and was rolled back`
+            : this.buildRollbackFailure(
+              validationFailureMessage,
+              audit.rollback,
+              'Validation failed after writing the candidate change.'
+            ).error,
           validation: postChangeResult,
           rollback: rollbackResult,
           audit
@@ -362,15 +389,37 @@ const evolveExecutor = {
           targetExisted
         });
         audit.rollback = this.summarizeRollback(rollbackResult);
+
+        if (audit.rollback.success === false) {
+          const rollbackFailure = this.buildRollbackFailure(
+            error.message,
+            audit.rollback,
+            'An unexpected error occurred after writing the candidate change.'
+          );
+
+          audit.completedAt = new Date().toISOString();
+          audit.summary = rollbackFailure.summary;
+          this.recordEvolutionStatus(audit);
+
+          return {
+            success: false,
+            error: rollbackFailure.error,
+            audit
+          };
+        }
       }
 
       audit.completedAt = new Date().toISOString();
-      audit.summary = error.message;
+      audit.summary = wroteCandidate && audit.rollback?.success
+        ? `${error.message} Change was rolled back.`
+        : error.message;
       this.recordEvolutionStatus(audit);
 
       return {
         success: false,
-        error: error.message,
+        error: wroteCandidate && audit.rollback?.success
+          ? `${error.message} Change was rolled back.`
+          : error.message,
         audit
       };
     } finally {
