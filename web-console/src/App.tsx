@@ -144,6 +144,7 @@ function App() {
   const [respondingConfirmId, setRespondingConfirmId] = useState<string | null>(null);
   const [queuePort, setQueuePort] = useState<number | null>(null);
   const [latestEvolutionValidation, setLatestEvolutionValidation] = useState<EvolutionValidation | null>(null);
+  const [evolutionValidationHistory, setEvolutionValidationHistory] = useState<EvolutionValidation[]>([]);
   const [evolveSubmitError, setEvolveSubmitError] = useState<string | null>(null);
   const [isEvolving, setIsEvolving] = useState(false);
   const wsRef = useRef<WebSocket | null>(null);
@@ -210,9 +211,17 @@ function App() {
   };
 
   const fetchEvolutionValidationStatus = async () => {
-    const response = await queueRequest('/evolve/validation-status?limit=1');
+    const response = await queueRequest('/evolve/validation-status?limit=6');
     const data = await response.json();
-    setLatestEvolutionValidation(data.latest || null);
+
+    const latest = data.latest || null;
+    const history = Array.isArray(data.history) ? data.history : [];
+    const mergedHistory = [latest, ...history].filter(Boolean).filter((item, index, list) => (
+      list.findIndex((candidate) => candidate.evolutionId === item.evolutionId) === index
+    ));
+
+    setLatestEvolutionValidation(latest);
+    setEvolutionValidationHistory(mergedHistory);
   };
 
   useEffect(() => {
@@ -421,6 +430,7 @@ function App() {
   };
 
   const failedValidationChecks = latestEvolutionValidation?.postChange?.failedChecks || latestEvolutionValidation?.preflight?.failedChecks || [];
+  const recentEvolutionAudits = evolutionValidationHistory.filter((item) => item.evolutionId !== latestEvolutionValidation?.evolutionId);
 
   return (
     <div className="min-h-screen bg-gray-50 text-gray-900 font-sans p-8">
@@ -603,7 +613,7 @@ function App() {
               <div className="flex items-center justify-between gap-4 mb-4">
                 <div>
                   <h2 className="text-xl font-semibold">Latest Evolution Validation</h2>
-                  <p className="text-sm text-gray-500">Shows the last preflight check, post-change validation, and rollback outcome.</p>
+                  <p className="text-sm text-gray-500">Shows the last preflight check, post-change validation, rollback outcome, and recent audit history.</p>
                 </div>
                 <button
                   onClick={() => fetchEvolutionValidationStatus().catch((err) => console.error('Failed to fetch evolution validation status:', err))}
@@ -717,6 +727,71 @@ function App() {
                   )}
                 </div>
               )}
+
+              <div className="mt-4 rounded-xl border border-gray-200 bg-gray-50 p-4">
+                <div className="flex items-center justify-between gap-3 mb-3">
+                  <div>
+                    <h3 className="font-medium text-gray-900">Recent Audit History</h3>
+                    <p className="text-sm text-gray-500">Recent evolve runs persisted by the validator service.</p>
+                  </div>
+                  <span className="text-xs text-gray-500">{evolutionValidationHistory.length} recorded</span>
+                </div>
+
+                {recentEvolutionAudits.length === 0 ? (
+                  <p className="text-sm text-gray-500">Only the latest validation audit is available right now.</p>
+                ) : (
+                  <div className="space-y-3">
+                    {recentEvolutionAudits.map((audit) => {
+                      const failedCheck = audit.postChange?.failedChecks?.[0] || audit.preflight?.failedChecks?.[0] || null;
+                      const statusClassName = audit.success
+                        ? 'bg-green-100 text-green-800'
+                        : audit.blocked
+                          ? 'bg-amber-100 text-amber-800'
+                          : 'bg-red-100 text-red-800';
+                      const statusLabel = audit.success ? 'PASSED' : audit.blocked ? 'BLOCKED' : 'ROLLED BACK';
+
+                      return (
+                        <div key={audit.evolutionId} className="rounded-lg border border-gray-200 bg-white p-4">
+                          <div className="flex items-start justify-between gap-4">
+                            <div>
+                              <div className="flex items-center gap-2">
+                                <span className={`px-2.5 py-1 rounded-full text-xs font-medium ${statusClassName}`}>
+                                  {statusLabel}
+                                </span>
+                                <span className="font-medium text-gray-900">{audit.action}</span>
+                              </div>
+                              <p className="mt-1 text-xs font-mono text-gray-500">{audit.targetRelativePath}</p>
+                              <p className="mt-2 text-sm text-gray-700">{audit.summary || 'No summary available.'}</p>
+                            </div>
+                            <span className="text-xs text-gray-500 whitespace-nowrap">
+                              {new Date(audit.completedAt || audit.startedAt).toLocaleString()}
+                            </span>
+                          </div>
+
+                          <div className="mt-3 flex flex-wrap gap-3 text-xs text-gray-500">
+                            <span>Risk: {(audit.riskLevel || 'unknown').toUpperCase()}</span>
+                            <span>Preflight: {audit.preflight?.success ? 'pass' : 'fail'}</span>
+                            <span>Post-change: {audit.postChange?.success ? 'pass' : 'fail'}</span>
+                            {audit.rollback?.attempted && (
+                              <span>Rollback: {audit.rollback.success ? 'pass' : 'fail'}</span>
+                            )}
+                          </div>
+
+                          {failedCheck && (
+                            <div className="mt-3 rounded-lg border border-red-100 bg-red-50 p-3 text-sm">
+                              <div className="font-medium text-red-800">{failedCheck.name || 'validation check'}</div>
+                              <div className="mt-1 text-xs font-mono text-red-700">{failedCheck.targetPath || failedCheck.command || 'No target recorded'}</div>
+                              {(failedCheck.error || failedCheck.reason) && (
+                                <div className="mt-1 text-xs text-red-700">{failedCheck.error || failedCheck.reason}</div>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
             </div>
 
             <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
