@@ -16,7 +16,7 @@ function writeAuthSnapshot(storePath, overrides = {}) {
     auth: {
       userAgent: 'Fake Chromium UA',
       cookieHeader: 'ds_session=cookie-123',
-      bearerToken: 'fake-bearer-token',
+      bearerToken: '{"value":"fake-bearer-token","__version":"1"}',
       pageUrl: 'https://chat.deepseek.com/',
       ...(overrides.auth || {})
     },
@@ -326,6 +326,38 @@ async function runTelemetryTokenScenario() {
   }
 }
 
+async function runEmptyWrappedTokenScenario() {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'fcc-deepseek-probe-empty-wrapper-'));
+  const storePath = path.join(tempDir, 'deepseek-web-auth.json');
+  writeAuthSnapshot(storePath, {
+    auth: {
+      bearerToken: '{"value":null,"__version":"0"}',
+      bearerSource: 'localStorage:localStorage.userToken'
+    }
+  });
+
+  try {
+    const probeResult = await runProbe([
+      '--store-path',
+      storePath,
+      '--json'
+    ]);
+
+    assert.notStrictEqual(probeResult.status, 0, probeResult.stdout);
+
+    const output = JSON.parse(probeResult.stdout);
+    assert.strictEqual(output.ok, false);
+    assert.strictEqual(output.auth.ready, false);
+    assert.strictEqual(output.auth.reason, 'incomplete_snapshot');
+    assert.deepStrictEqual(output.auth.missing, ['bearerToken']);
+    assert.strictEqual(output.probe.ok, false);
+    assert.strictEqual(output.probe.error.code, 'DEEPSEEK_AUTH_INCOMPLETE');
+    assert.ok(output.nextSteps.some((step) => step.includes('onboard-deepseek-web.js')));
+  } finally {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
+}
+
 async function runInvalidTokenScenario() {
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'fcc-deepseek-probe-invalid-token-'));
   const storePath = path.join(tempDir, 'deepseek-web-auth.json');
@@ -364,6 +396,7 @@ async function main() {
   await runChallengeAuthScenario();
   await runLoggedOutAuthScenario();
   await runTelemetryTokenScenario();
+  await runEmptyWrappedTokenScenario();
   await runInvalidTokenScenario();
   console.log('PASS test-deepseek-provider-probe');
 }

@@ -15,7 +15,7 @@ function writeAuthSnapshot(storePath, overrides = {}) {
     auth: {
       userAgent: 'Fake Chromium UA',
       cookieHeader: 'ds_session=cookie-123',
-      bearerToken: 'fake-bearer-token',
+      bearerToken: '{"value":"fake-bearer-token","__version":"1"}',
       pageUrl: 'https://chat.deepseek.com/',
       ...(overrides.auth || {})
     },
@@ -266,6 +266,34 @@ async function main() {
       assert.strictEqual(error.code, 'DEEPSEEK_AUTH_TOKEN_SOURCE_INVALID');
       assert.strictEqual(error.details.reason, 'telemetry_token');
       assert.strictEqual(error.details.bearerSource, 'localStorage:localStorage.__tea_cache_tokens_20006317');
+    }
+
+    writeAuthSnapshot(storePath, {
+      auth: {
+        bearerToken: '{"value":null,"__version":"0"}',
+        bearerSource: 'localStorage:localStorage.userToken',
+        pageUrl: 'https://chat.deepseek.com/'
+      }
+    });
+    const emptyWrappedInspection = deepseekWebProvider.inspectAuthState(storePath);
+    assert.strictEqual(emptyWrappedInspection.ready, false);
+    assert.strictEqual(emptyWrappedInspection.reason, 'incomplete_snapshot');
+    assert.deepStrictEqual(emptyWrappedInspection.missing, ['bearerToken']);
+
+    try {
+      await providerRegistry.executeTask({
+        id: 'task-deepseek-auth-empty-wrapper',
+        prompt: 'hello',
+        options: {
+          provider: 'deepseek-web',
+          authStorePath: storePath
+        }
+      });
+      assert.fail('Expected deepseek-web execution to fail when auth snapshot only contains an empty wrapped token.');
+    } catch (error) {
+      assert.strictEqual(error.code, 'DEEPSEEK_AUTH_INCOMPLETE');
+      assert.strictEqual(error.details.reason, 'incomplete_snapshot');
+      assert.deepStrictEqual(error.details.missing, ['bearerToken']);
     }
 
     writeAuthSnapshot(storePath);

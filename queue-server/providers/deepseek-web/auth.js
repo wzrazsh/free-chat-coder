@@ -501,13 +501,87 @@ function scoreBearerCandidate(candidate) {
   return score;
 }
 
-function normalizeBearerToken(value) {
-  if (!value) {
+const TOKEN_WRAPPER_KEY_RE = /^(?:value|token|accessToken|access_token|bearer|bearerToken|bearer_token|authorization|authToken|auth_token|idToken|id_token|jwt)$/i;
+
+function tryParseJson(value) {
+  try {
+    return {
+      ok: true,
+      value: JSON.parse(value)
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      value: null
+    };
+  }
+}
+
+function normalizeBearerToken(value, depth = 0) {
+  if (depth > 4 || value == null) {
     return null;
   }
 
-  const stringValue = String(value).trim();
-  return stringValue.replace(/^Bearer\s+/i, '') || null;
+  if (typeof value === 'string') {
+    const stringValue = value.trim();
+    if (!stringValue) {
+      return null;
+    }
+
+    const normalizedValue = stringValue.replace(/^Bearer\s+/i, '').trim();
+    if (!normalizedValue) {
+      return null;
+    }
+
+    if (/^(?:null|undefined|true|false)$/i.test(normalizedValue)) {
+      return null;
+    }
+
+    if (/^\d{1,10}$/.test(normalizedValue)) {
+      return null;
+    }
+
+    if (/^[\[{"]/.test(normalizedValue)) {
+      const parsed = tryParseJson(normalizedValue);
+      if (parsed.ok) {
+        return normalizeBearerToken(parsed.value, depth + 1);
+      }
+    }
+
+    return normalizedValue;
+  }
+
+  if (Array.isArray(value)) {
+    for (const entry of value.slice(0, 10)) {
+      const candidate = normalizeBearerToken(entry, depth + 1);
+      if (candidate) {
+        return candidate;
+      }
+    }
+    return null;
+  }
+
+  if (typeof value === 'object') {
+    const entries = Object.entries(value);
+    const prioritizedEntries = entries.filter(([key]) => TOKEN_WRAPPER_KEY_RE.test(key));
+    const nestedEntries = entries.filter(([key, entryValue]) => !TOKEN_WRAPPER_KEY_RE.test(key) && entryValue && typeof entryValue === 'object');
+
+    for (const [, entryValue] of prioritizedEntries) {
+      const candidate = normalizeBearerToken(entryValue, depth + 1);
+      if (candidate) {
+        return candidate;
+      }
+    }
+
+    for (const [, entryValue] of nestedEntries) {
+      const candidate = normalizeBearerToken(entryValue, depth + 1);
+      if (candidate) {
+        return candidate;
+      }
+    }
+  }
+
+  return null;
 }
 
 function isRejectedBearerCandidate(candidate) {
@@ -781,7 +855,18 @@ function loadAuthState(options = {}) {
     return null;
   }
 
-  return JSON.parse(fs.readFileSync(storePath, 'utf8'));
+  const authState = JSON.parse(fs.readFileSync(storePath, 'utf8'));
+  if (!authState || typeof authState !== 'object' || !authState.auth || typeof authState.auth !== 'object') {
+    return authState;
+  }
+
+  return {
+    ...authState,
+    auth: {
+      ...authState.auth,
+      bearerToken: normalizeBearerToken(authState.auth.bearerToken)
+    }
+  };
 }
 
 function clearAuthState(options = {}) {
