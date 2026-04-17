@@ -103,6 +103,19 @@ node scripts/sync-config.js
 
 `scripts/sync-config.js` 当前主要用于同步扩展里的默认端口展示和 `manifest.json` 的本地访问权限；运行时端口发现不依赖这个脚本。
 
+## 定时开发任务
+
+如果希望用本机定时任务持续刷新项目状态并执行夜间验证，可以安装仓库自带的 cron 配置：
+
+```bash
+./scripts/install-dev-cron.sh
+```
+
+安装后会创建两类任务：
+
+- 每 30 分钟刷新一次 `.workbuddy/auto-dev-status.md`
+- 每天凌晨 2:20 生成一次 `.workbuddy/auto-nightly-validation.md`
+
 ## 验证建议
 
 至少执行以下检查：

@@ -21,3 +21,5 @@ CODEBUDDY.md
 .mcp.json
 .browser-profile-webconsole
 opencode.json
+.workbuddy/auto-*.md
+.workbuddy/dev-*.log
