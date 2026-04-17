@@ -155,6 +155,114 @@ function finishTaskUpdate(taskId, status, result, error, options = {}) {
   }
 }
 
+function getWsClients() {
+  return {
+    extension: extensionClients.values().next().value,
+    web: Array.from(webClients)
+  };
+}
+
+function continueTaskProcessing(task, nextPrompt, options = {}) {
+  const taskUpdates = options && typeof options.taskUpdates === 'object' ? options.taskUpdates : {};
+  const updatedTask = queueManager.updateTask(task.id, {
+    status: 'processing',
+    prompt: nextPrompt,
+    round: task.round,
+    ...taskUpdates
+  });
+
+  if (!updatedTask) {
+    return;
+  }
+
+  broadcastToWeb({
+    type: 'task_update',
+    task: updatedTask
+  });
+
+  const providerId = providerRegistry.getTaskProvider(updatedTask);
+  if (providerRegistry.isServerSideProvider(providerId)) {
+    executeServerSideTask(updatedTask);
+    return;
+  }
+
+  const extensionClient = extensionClients.values().next().value;
+  if (extensionClient && extensionClient.readyState === WebSocket.OPEN) {
+    extensionClient.send(JSON.stringify({
+      type: 'task_assigned',
+      task: {
+        ...updatedTask,
+        prompt: getProcessedPrompt(updatedTask)
+      }
+    }));
+  } else {
+    const requeuedTask = queueManager.requeueTask(task.id, {
+      prompt: nextPrompt,
+      round: task.round,
+      ...taskUpdates
+    });
+
+    if (requeuedTask) {
+      console.warn(`[WS] Re-queued task ${task.id} because no extension was available for round ${task.round}`);
+      broadcastToWeb({
+        type: 'task_update',
+        task: requeuedTask
+      });
+      return;
+    }
+  }
+}
+
+async function handleCompletedTaskResult(task, replyText, options = {}) {
+  const taskUpdates = options && typeof options.taskUpdates === 'object' ? options.taskUpdates : {};
+  const conversationMetadata = options && typeof options.conversationMetadata === 'object'
+    ? options.conversationMetadata
+    : {};
+
+  if (!customHandler || typeof customHandler.processResult !== 'function') {
+    finishTaskUpdate(task.id, 'completed', replyText, null, {
+      taskUpdates,
+      conversationMetadata
+    });
+    return;
+  }
+
+  try {
+    const processRes = await customHandler.processResult(task, replyText, getWsClients());
+
+    if (processRes.status === 'processing') {
+      if (processRes.requiresExtension && !processRes.extensionActionsDispatched) {
+        finishTaskUpdate(
+          task.id,
+          'failed',
+          null,
+          'Browser extension execution is required for this task, but no extension client is connected.',
+          {
+            taskUpdates,
+            conversationMetadata
+          }
+        );
+        return;
+      }
+
+      continueTaskProcessing(task, processRes.nextPrompt, {
+        taskUpdates
+      });
+      return;
+    }
+
+    finishTaskUpdate(task.id, processRes.status, processRes.result ?? replyText, processRes.error, {
+      taskUpdates,
+      conversationMetadata
+    });
+  } catch (error) {
+    finishTaskUpdate(task.id, 'failed', null, error.message || String(error), {
+      taskUpdates,
+      conversationMetadata
+    });
+  }
+}
+
 async function executeServerSideTask(task) {
   const providerId = providerRegistry.getTaskProvider(task);
   const processedPrompt = getProcessedPrompt(task);
@@ -215,7 +323,7 @@ async function executeServerSideTask(task) {
     if (providerId === 'deepseek-web') {
       deepseekWebBusy = false;
     }
-    finishTaskUpdate(task.id, 'completed', extractProviderResult(providerResult), null, {
+    await handleCompletedTaskResult(task, extractProviderResult(providerResult), {
       taskUpdates,
       conversationMetadata
     });
@@ -268,47 +376,9 @@ function setupWebSocket(server) {
           if (!task) return;
 
           // Agent 层核心：如果任务状态是 completed，且存在 processResult，交给它处理多轮动作
-          if (status === 'completed' && customHandler && typeof customHandler.processResult === 'function') {
-            const wsClients = {
-              extension: extensionClients.values().next().value,
-              web: Array.from(webClients)
-            };
-            
-            customHandler.processResult(task, result, wsClients).then(processRes => {
-              if (processRes.status === 'processing') {
-                const nextRoundTask = queueManager.updateTask(taskId, {
-                  status: 'processing',
-                  prompt: processRes.nextPrompt,
-                  round: task.round
-                });
-
-                // 将下一轮反馈发给扩展
-                if (wsClients.extension && wsClients.extension.readyState === WebSocket.OPEN && nextRoundTask) {
-                  wsClients.extension.send(JSON.stringify({
-                    type: 'task_assigned',
-                    task: nextRoundTask
-                  }));
-                } else {
-                  const requeuedTask = queueManager.requeueTask(taskId, {
-                    prompt: processRes.nextPrompt,
-                    round: task.round
-                  });
-
-                  if (requeuedTask) {
-                    console.warn(`[WS] Re-queued task ${taskId} because no extension was available for round ${task.round}`);
-                  }
-                }
-                
-                broadcastToWeb({
-                  type: 'task_update',
-                  task: queueManager.getTask(taskId)
-                });
-              } else {
-                // 真正结束
-                finishTaskUpdate(taskId, processRes.status, processRes.result || processRes.result, processRes.error);
-              }
-            }).catch(err => {
-              finishTaskUpdate(taskId, 'failed', null, err.message);
+          if (status === 'completed') {
+            handleCompletedTaskResult(task, result).catch((handlerError) => {
+              finishTaskUpdate(taskId, 'failed', null, handlerError.message || String(handlerError));
             });
           } else {
             finishTaskUpdate(taskId, status, result, error);

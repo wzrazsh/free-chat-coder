@@ -89,7 +89,8 @@ module.exports = {
       // 3. 如果有需要发给扩展执行的动作（异步流程更复杂，目前简化处理）
       // 我们在此简单通过 WebSocket 派发，真实结果可能需要通过新的回调收。
       // 为简化当前流程，假设派发即成功，或直接交给扩展并在下一轮带回结果。
-      if (extensionActions.length > 0 && wsClients && wsClients.extension) {
+      const hasExtensionClient = Boolean(wsClients && wsClients.extension);
+      if (extensionActions.length > 0 && hasExtensionClient) {
         for (const extAction of extensionActions) {
           const requestId = `${task.id}-${extAction.action}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
           conversationStore.recordBrowserAction({
@@ -133,7 +134,10 @@ module.exports = {
       // 返回 processing 和 nextPrompt，告诉上层继续发起对话
       return { 
         status: 'processing', 
-        nextPrompt: feedbackPrompt 
+        nextPrompt: feedbackPrompt,
+        requiresExtension: extensionActions.length > 0,
+        extensionActionsDispatched: extensionActions.length === 0 || hasExtensionClient,
+        extensionActionCount: extensionActions.length
       };
 
     } catch (err) {
