@@ -1039,6 +1039,15 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       }));
     return true;
   }
+  else if (msg.type === 'refresh_service_bootstrap_status') {
+    ensureLocalServices('manual-refresh')
+      .then((status) => sendResponse({ status }))
+      .catch((error) => sendResponse({
+        status: null,
+        error: error.message || String(error)
+      }));
+    return true;
+  }
   // 状态查询接口
   else if (msg.type === 'get_extension_status') {
     Promise.all([

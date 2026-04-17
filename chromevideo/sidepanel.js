@@ -12,6 +12,7 @@ let confirmPollInterval = null;
 const respondingConfirmIds = new Set();
 let extensionConversations = [];
 let activeConversationId = null;
+let workbench = null;
 
 // 自动进化状态
 let autoEvolveState = {
@@ -23,12 +24,7 @@ let autoEvolveState = {
 };
 
 function updateQueuePortLabel(portNumber) {
-  const portTag = document.getElementById('queue-port-tag');
-  if (!portTag) {
-    return;
-  }
-
-  portTag.textContent = portNumber ? `:${portNumber}` : ':8080+';
+  return portNumber;
 }
 
 async function getQueueServerTarget(force = false) {
@@ -661,6 +657,16 @@ function updateEvolveProgress(progress) {
   updateEvolveUI();
 }
 
+function reportTestDomError() {
+  chrome.runtime.sendMessage({
+    type: 'content_script_error',
+    errorType: 'dom_selector_not_found',
+    details: { selector: 'test-button-selector', context: 'sidepanel test', url: 'https://chat.deepseek.com/' }
+  }, () => {
+    addLogMessage('system', '⚠️ 模拟 DOM 错误已记录');
+  });
+}
+
 // ══════════════════════════════════════════
 //  Native Host 通信
 // ══════════════════════════════════════════
@@ -671,27 +677,47 @@ function connectHost() {
 
     port.onMessage.addListener((msg) => {
       if (msg.type === 'status') {
-        updateStatus('queue', msg.queueServerRunning);
-        updateStatus('web', msg.webConsoleRunning);
-        updateQueuePortLabel(msg.queueServerPort);
+        const errorEl = document.getElementById('error');
+        const hintEl = document.getElementById('setup-hint');
+        if (
+          errorEl.textContent.startsWith('Native Host') ||
+          errorEl.textContent.startsWith('Connection Error')
+        ) {
+          errorEl.textContent = '';
+          hintEl.style.display = 'none';
+        }
+        workbench?.setHostConnected(true);
+        workbench?.setHostError('');
+        workbench?.setStatus({
+          queueAlive: msg.queueServerRunning,
+          queuePort: msg.queueServerPort,
+          webAlive: msg.webConsoleRunning
+        });
         refreshBootstrapStatus();
         updateConnectionUI(true);
       } else if (msg.type === 'error') {
         document.getElementById('error').textContent = msg.message;
         addLogMessage('system', '⚠️ Host 错误: ' + msg.message);
+        workbench?.setHostError(msg.message);
       }
     });
 
     port.onDisconnect.addListener(() => {
       const err = chrome.runtime.lastError;
+      let message = 'Native Host 断开连接';
       if (err) {
-        document.getElementById('error').textContent = 'Native Host 断开: ' + err.message;
+        message = 'Native Host 断开: ' + err.message;
+        document.getElementById('error').textContent = message;
         document.getElementById('setup-hint').style.display = 'block';
         addLogMessage('system', '🔴 Native Host 断开连接');
       }
-      updateQueuePortLabel(null);
-      updateStatus('queue', false, 'Disconnected');
-      updateStatus('web', false, 'Disconnected');
+      workbench?.setHostConnected(false);
+      workbench?.setHostError(message);
+      workbench?.setStatus({
+        queueAlive: false,
+        queuePort: null,
+        webAlive: false
+      });
       updateConnectionUI(false);
       port = null;
     });
@@ -699,24 +725,14 @@ function connectHost() {
     document.getElementById('error').textContent = 'Connection Error: ' + err.message;
     document.getElementById('setup-hint').style.display = 'block';
     updateConnectionUI(false);
-  }
-}
-
-function updateStatus(server, isRunning, customText) {
-  const textEl = document.getElementById('status-' + server);
-  const dotEl = document.getElementById('dot-' + server);
-  if (!textEl || !dotEl) return;
-
-  if (customText) {
-    textEl.textContent = customText;
-    dotEl.className = 'dot';
-  } else {
-    textEl.textContent = isRunning ? 'Running' : 'Stopped';
-    dotEl.className = 'dot ' + (isRunning ? 'running' : 'stopped');
+    workbench?.setHostConnected(false);
+    workbench?.setHostError('Connection Error: ' + err.message);
   }
 }
 
 function applyBootstrapStatus(status) {
+  workbench?.setBootstrapStatus(status);
+
   if (!status) {
     return;
   }
@@ -737,8 +753,10 @@ function applyBootstrapStatus(status) {
   }
 }
 
-function refreshBootstrapStatus() {
-  chrome.runtime.sendMessage({ type: 'get_service_bootstrap_status' }, (response) => {
+function refreshBootstrapStatus(force = false) {
+  chrome.runtime.sendMessage({
+    type: force ? 'refresh_service_bootstrap_status' : 'get_service_bootstrap_status'
+  }, (response) => {
     if (chrome.runtime.lastError) {
       return;
     }
@@ -798,9 +816,11 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     renderPendingConfirms();
   }
   else if (msg.type === 'heartbeat_status') {
-    updateStatus('queue', msg.queueAlive);
-    updateStatus('web', msg.webAlive);
-    updateQueuePortLabel(msg.queueServerPort);
+    workbench?.setStatus({
+      queueAlive: msg.queueAlive,
+      queuePort: msg.queueServerPort,
+      webAlive: msg.webAlive
+    });
   }
   else if (msg.type === 'service_bootstrap_status') {
     applyBootstrapStatus(msg.status);
@@ -808,42 +828,6 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   else if (msg.type === 'evolve_progress') {
     updateEvolveProgress(msg.progress);
   }
-});
-
-// ══════════════════════════════════════════
-//  设置视图事件绑定
-// ══════════════════════════════════════════
-
-document.getElementById('start-queue').addEventListener('click', () => {
-  sendCommand('start_queue');
-  addLogMessage('system', '▶ 启动 Queue Server...');
-});
-document.getElementById('stop-queue').addEventListener('click', () => {
-  sendCommand('stop_queue');
-  addLogMessage('system', '■ 停止 Queue Server...');
-});
-document.getElementById('start-web').addEventListener('click', () => {
-  sendCommand('start_web');
-  addLogMessage('system', '▶ 启动 Web Console...');
-});
-document.getElementById('stop-web').addEventListener('click', () => {
-  sendCommand('stop_web');
-  addLogMessage('system', '■ 停止 Web Console...');
-});
-document.getElementById('link-web').addEventListener('click', () => {
-  chrome.tabs.create({ url: 'http://localhost:5173' });
-});
-document.getElementById('link-deepseek').addEventListener('click', () => {
-  chrome.tabs.create({ url: 'https://chat.deepseek.com' });
-});
-document.getElementById('test-error').addEventListener('click', () => {
-  chrome.runtime.sendMessage({
-    type: 'content_script_error',
-    errorType: 'dom_selector_not_found',
-    details: { selector: 'test-button-selector', context: 'sidepanel test', url: 'https://chat.deepseek.com/' }
-  }, () => {
-    addLogMessage('system', '⚠️ 模拟 DOM 错误已记录');
-  });
 });
 
 // 自动进化事件
@@ -859,6 +843,38 @@ document.getElementById('link-evolve-tab').addEventListener('click', () => {
 //  初始化
 // ══════════════════════════════════════════
 
+workbench = serviceWorkbench.createServiceWorkbench({
+  root: 'service-workbench',
+  onCommand: (command) => {
+    sendCommand(command);
+    if (command === 'start_queue') {
+      addLogMessage('system', '▶ 启动 Queue Server...');
+    } else if (command === 'stop_queue') {
+      addLogMessage('system', '■ 停止 Queue Server...');
+    } else if (command === 'start_web') {
+      addLogMessage('system', '▶ 启动 Web Console...');
+    } else if (command === 'stop_web') {
+      addLogMessage('system', '■ 停止 Web Console...');
+    }
+  },
+  onOpenWeb: () => {
+    chrome.tabs.create({ url: 'http://localhost:5173' });
+    addLogMessage('system', '🌐 打开 Web Console');
+  },
+  onOpenDeepSeek: () => {
+    chrome.tabs.create({ url: 'https://chat.deepseek.com' });
+    addLogMessage('system', '💬 打开 DeepSeek 聊天页');
+  },
+  onTestDomError: reportTestDomError,
+  onRefresh: () => {
+    sendCommand('status');
+    refreshBootstrapStatus(true);
+    addLogMessage('system', '🔄 刷新服务诊断');
+  }
+});
+workbench.load().catch((error) => {
+  console.warn('[SidePanel] Failed to load service workbench:', error.message || error);
+});
 connectHost();
 refreshBootstrapStatus();
 fetchPendingConfirms();
@@ -900,6 +916,7 @@ loadEvolveState().then(() => {
 
 // 侧边栏关闭时清理
 window.addEventListener('unload', () => {
+  workbench?.destroy();
   if (statusInterval) clearInterval(statusInterval);
   if (confirmPollInterval) clearInterval(confirmPollInterval);
 });

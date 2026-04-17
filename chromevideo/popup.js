@@ -1,5 +1,6 @@
 const HOST_NAME = "com.trae.freechatcoder.host";
 let port = null;
+let workbench = null;
 
 // 自动进化状态
 let autoEvolveState = {
@@ -10,13 +11,15 @@ let autoEvolveState = {
   progress: 0
 };
 
-function updateQueueTitle(portNumber) {
-  const queueTitle = document.getElementById('queue-title');
-  if (!queueTitle) {
-    return;
-  }
-
-  queueTitle.textContent = `Queue Server (Port ${portNumber || '8080+'})`;
+function reportTestDomError() {
+  chrome.runtime.sendMessage({
+    type: 'content_script_error',
+    errorType: 'dom_selector_not_found',
+    details: { selector: 'test-button-selector', context: 'popup test', url: 'https://chat.deepseek.com/' }
+  }, () => {
+    console.log('Error sent');
+    alert('错误已记录（注：需累计触发3次才会启动自动进化），请多点几次或查询扩展状态/服务器日志查看任务');
+  });
 }
 
 // 加载保存的进化状态
@@ -162,46 +165,57 @@ function connectHost() {
 
     port.onMessage.addListener((msg) => {
       if (msg.type === 'status') {
-        updateStatus('queue', msg.queueServerRunning);
-        updateStatus('web', msg.webConsoleRunning);
-        updateQueueTitle(msg.queueServerPort);
+        const errorEl = document.getElementById('error');
+        const hintEl = document.getElementById('setup-hint');
+        if (
+          errorEl.textContent.startsWith('Native Host') ||
+          errorEl.textContent.startsWith('Connection Error')
+        ) {
+          errorEl.textContent = '';
+          hintEl.style.display = 'none';
+        }
+        workbench?.setHostConnected(true);
+        workbench?.setHostError('');
+        workbench?.setStatus({
+          queueAlive: msg.queueServerRunning,
+          queuePort: msg.queueServerPort,
+          webAlive: msg.webConsoleRunning
+        });
         refreshBootstrapStatus();
       } else if (msg.type === 'error') {
         document.getElementById('error').textContent = msg.message;
+        workbench?.setHostError(msg.message);
       }
     });
 
     port.onDisconnect.addListener(() => {
       const err = chrome.runtime.lastError;
+      let message = 'Native Host Disconnected';
       if (err) {
-        document.getElementById('error').textContent = `Native Host Disconnected: ${err.message}`;
+        message = `Native Host Disconnected: ${err.message}`;
+        document.getElementById('error').textContent = message;
         document.getElementById('setup-hint').style.display = 'block';
       }
-      updateQueueTitle(null);
-      updateStatus('queue', false, 'Disconnected');
-      updateStatus('web', false, 'Disconnected');
+      workbench?.setHostConnected(false);
+      workbench?.setHostError(message);
+      workbench?.setStatus({
+        queueAlive: false,
+        queuePort: null,
+        webAlive: false
+      });
       port = null;
     });
   } catch (err) {
     document.getElementById('error').textContent = `Connection Error: ${err.message}`;
     document.getElementById('setup-hint').style.display = 'block';
-  }
-}
-
-function updateStatus(server, isRunning, customText) {
-  const textEl = document.getElementById(`status-${server}`);
-  const dotEl = document.getElementById(`dot-${server}`);
-
-  if (customText) {
-    textEl.textContent = customText;
-    dotEl.className = 'status-dot';
-  } else {
-    textEl.textContent = isRunning ? 'Running' : 'Stopped';
-    dotEl.className = `status-dot ${isRunning ? 'running' : 'stopped'}`;
+    workbench?.setHostConnected(false);
+    workbench?.setHostError(`Connection Error: ${err.message}`);
   }
 }
 
 function applyBootstrapStatus(status) {
+  workbench?.setBootstrapStatus(status);
+
   if (!status) {
     return;
   }
@@ -222,8 +236,10 @@ function applyBootstrapStatus(status) {
   }
 }
 
-function refreshBootstrapStatus() {
-  chrome.runtime.sendMessage({ type: 'get_service_bootstrap_status' }, (response) => {
+function refreshBootstrapStatus(force = false) {
+  chrome.runtime.sendMessage({
+    type: force ? 'refresh_service_bootstrap_status' : 'get_service_bootstrap_status'
+  }, (response) => {
     if (chrome.runtime.lastError) {
       return;
     }
@@ -247,32 +263,16 @@ function sendCommand(command) {
 
 chrome.runtime.onMessage.addListener((msg) => {
   if (msg.type === 'heartbeat_status') {
-    updateStatus('queue', msg.queueAlive);
-    updateStatus('web', msg.webAlive);
-    updateQueueTitle(msg.queueServerPort);
+    workbench?.setStatus({
+      queueAlive: msg.queueAlive,
+      queuePort: msg.queueServerPort,
+      webAlive: msg.webAlive
+    });
   } else if (msg.type === 'service_bootstrap_status') {
     applyBootstrapStatus(msg.status);
   } else if (msg.type === 'evolve_progress') {
     updateEvolveProgress(msg.progress);
   }
-});
-
-// 事件绑定
-document.getElementById('start-queue').addEventListener('click', () => sendCommand('start_queue'));
-document.getElementById('stop-queue').addEventListener('click', () => sendCommand('stop_queue'));
-document.getElementById('start-web').addEventListener('click', () => sendCommand('start_web'));
-document.getElementById('stop-web').addEventListener('click', () => sendCommand('stop_web'));
-document.getElementById('link-web').addEventListener('click', () => { chrome.tabs.create({ url: 'http://localhost:5173' }); });
-document.getElementById('link-deepseek').addEventListener('click', () => { chrome.tabs.create({ url: 'https://chat.deepseek.com' }); });
-document.getElementById('test-error').addEventListener('click', () => {
-  chrome.runtime.sendMessage({
-    type: 'content_script_error',
-    errorType: 'dom_selector_not_found',
-    details: { selector: 'test-button-selector', context: 'popup test', url: 'https://chat.deepseek.com/' }
-  }, () => {
-    console.log('Error sent');
-    alert('错误已记录（注：需累计触发3次才会启动自动进化），请多点几次或查询扩展状态/服务器日志查看任务');
-  });
 });
 
 // 自动进化事件
@@ -285,6 +285,27 @@ document.getElementById('link-evolve-tab').addEventListener('click', () => {
 });
 
 // 初始化
+workbench = serviceWorkbench.createServiceWorkbench({
+  root: 'service-workbench',
+  onCommand: (command) => sendCommand(command),
+  onOpenWeb: () => {
+    chrome.tabs.create({ url: 'http://localhost:5173' });
+  },
+  onOpenDeepSeek: () => {
+    chrome.tabs.create({ url: 'https://chat.deepseek.com' });
+  },
+  onTestDomError: reportTestDomError,
+  onRefresh: () => {
+    sendCommand('status');
+    refreshBootstrapStatus(true);
+  }
+});
+workbench.load().catch((error) => {
+  console.warn('[Popup] Failed to load service workbench:', error.message || error);
+});
+window.addEventListener('unload', () => {
+  workbench?.destroy();
+});
 connectHost();
 refreshBootstrapStatus();
 loadEvolveState().then(() => {

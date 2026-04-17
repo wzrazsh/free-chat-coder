@@ -9,21 +9,6 @@ const queueCandidates = [8080, 8082, 8083, 8084, 8085, 8086, 8087, 8088, 8089, 8
 
 const priorities = [
   {
-    id: 'P1-2',
-    title: '收紧自动进化的验证与回滚',
-    reason: '自动进化链路已具备写代码能力，但预验证、结果审计和失败回滚仍不够硬。',
-    files: [
-      'queue-server/evolution/evolve-executor.js',
-      'queue-server/test-validator/',
-      'queue-server/actions/confirm-manager.js'
-    ],
-    acceptance: [
-      '进化前自动跑最小验证',
-      '失败时能定位到具体变更并触发回滚',
-      'Web Console 能查看最近一次进化的验证结果'
-    ]
-  },
-  {
     id: 'P2-1',
     title: '整合 popup / sidepanel 的工作台能力',
     reason: '基础链路稳定后，下一步产品体验差距主要来自入口分散、状态反馈不统一。',
@@ -31,11 +16,26 @@ const priorities = [
       'chromevideo/popup.js',
       'chromevideo/sidepanel.js',
       'chromevideo/popup.html',
-      'chromevideo/sidepanel.html'
+      'chromevideo/sidepanel.html',
+      'chromevideo/utils/'
     ],
     acceptance: [
       '服务状态、启动日志和常用操作有统一入口',
       '用户不需要在 popup 和 sidepanel 之间来回切换才能完成基本排障'
+    ]
+  },
+  {
+    id: 'P2-2',
+    title: '补齐任务模板、工作区配置与失败记录入口',
+    reason: '统一工作台之后，下一步体验缺口是常用任务入口和近期失败排障信息仍不够集中。',
+    files: [
+      'chromevideo/sidepanel.js',
+      'web-console/src/App.tsx',
+      'queue-server/data/test-reports/'
+    ],
+    acceptance: [
+      '常用任务模板和工作区配置可从主入口直接触达',
+      '最近失败记录和关键日志不需要翻文件即可查看'
     ]
   }
 ];
@@ -165,6 +165,7 @@ async function main() {
     '- P0-1 已完成：`chromevideo/host/install_host.js` 现已支持从浏览器 profile 自动识别扩展 ID，并写入 Chromium / Chrome for Testing 所需的 Native Messaging 清单路径。',
     '- P0-2 已完成：新增 `test-playwright-e2e.js`，可在真实 `.browser-profile` 上验证扩展加载、Native Host 拉起、Queue `/health`、Web Console 与 offscreen WebSocket 链路。',
     '- P1-1 已完成：`validate-environment.js` 现已输出扩展 ID、Native Host manifest 位置、浏览器 / Node 模块依赖与 Queue/Web Console 端口诊断，并给出可执行修复步骤。',
+    '- P1-2 已完成：自动进化链路现已具备 preflight/post-change 最小验证、失败回滚、验证审计持久化，以及 Web Console 最近审计历史展示。',
     '- `scripts/nightly-validate.sh` 已接入该回归测试，在具备浏览器 / Xvfb / 依赖时可自动执行。',
     '',
     '## 当前最高优先任务',
@@ -196,8 +197,8 @@ async function main() {
   lines.push('## 下一次进入会话时建议先做的事');
   lines.push('');
   lines.push('- 先读本文件、`README.md` 和 `git status --short`。');
-  lines.push('- 直接进入 P1-2：给自动进化链路补最小预执行验证、失败回滚和结果审计。');
-  lines.push('- 优先检查 `queue-server/evolution/evolve-executor.js`、`queue-server/test-validator/`、`queue-server/actions/confirm-manager.js`。');
+  lines.push('- 直接进入 P2-1：在真实扩展页面验证共享 Service Workbench 的状态刷新、启动诊断和最近事件表现。');
+  lines.push('- 优先检查 `chromevideo/popup.js`、`chromevideo/sidepanel.js`、`chromevideo/utils/service-workbench.js`。');
   lines.push('- 功能改动完成后，先跑聚焦验证，再提交。');
   lines.push('');
 

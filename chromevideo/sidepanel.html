@@ -2,6 +2,7 @@
 <html>
 <head>
   <meta charset="utf-8">
+  <link rel="stylesheet" href="utils/service-workbench.css">
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -725,49 +726,7 @@
     </div>
 
     <div class="settings-body">
-      <!-- Queue Server -->
-      <div class="s-card">
-        <div class="s-card-head">
-          <h4>Queue Server</h4>
-          <span class="port-tag" id="queue-port-tag">:8080+</span>
-        </div>
-        <div class="s-card-actions">
-          <button class="btn btn-start" id="start-queue">▶ Start</button>
-          <button class="btn btn-stop" id="stop-queue">■ Stop</button>
-        </div>
-        <div class="s-card-status">
-          <span class="dot" id="dot-queue"></span>
-          <span id="status-queue">Checking...</span>
-        </div>
-      </div>
-
-      <!-- Web Console -->
-      <div class="s-card">
-        <div class="s-card-head">
-          <h4>Web Console</h4>
-          <span class="port-tag">:5173</span>
-        </div>
-        <div class="s-card-actions">
-          <button class="btn btn-start" id="start-web">▶ Start</button>
-          <button class="btn btn-stop" id="stop-web">■ Stop</button>
-          <button class="btn btn-link" id="link-web">Open</button>
-        </div>
-        <div class="s-card-status">
-          <span class="dot" id="dot-web"></span>
-          <span id="status-web">Checking...</span>
-        </div>
-      </div>
-
-      <!-- DeepSeek Agent -->
-      <div class="s-card">
-        <div class="s-card-head">
-          <h4>DeepSeek Agent</h4>
-        </div>
-        <div class="s-card-actions">
-          <button class="btn btn-link" id="link-deepseek">Open DeepSeek Chat</button>
-          <button class="btn btn-warn" id="test-error">模拟 DOM 错误</button>
-        </div>
-      </div>
+      <div id="service-workbench"></div>
 
       <!-- 自动进化 -->
       <div class="s-card evolve">
@@ -798,6 +757,7 @@
   </div>
 
   <script src="utils/queue-config.js"></script>
+  <script src="utils/service-workbench.js"></script>
   <script src="sidepanel.js"></script>
 </body>
 </html>
