@@ -338,7 +338,7 @@ function buildNextSteps(authSummary, failureSummary) {
   const statusCode = failureSummary?.error?.statusCode || null;
 
   if (!authSummary.ready) {
-    suggestions.push('Run `node scripts/onboard-deepseek-web.js --profile .browser-profile` after logging in with the workspace browser profile.');
+    suggestions.push('Run `node scripts/onboard-deepseek-web.js --profile .browser-profile --launch-browser` and log in with the workspace browser profile if auth is still missing.');
   }
 
   if (statusCode === 404 || statusCode === 405) {

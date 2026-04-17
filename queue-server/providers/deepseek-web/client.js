@@ -80,7 +80,7 @@ function assertAuthReady(storePath) {
     return authSummary;
   }
 
-  const onboardingHint = 'Run `node scripts/onboard-deepseek-web.js --profile .browser-profile` after logging in via the workspace browser profile.';
+  const onboardingHint = 'Run `node scripts/onboard-deepseek-web.js --profile .browser-profile --launch-browser`, then log in via the workspace browser profile if auth is still missing.';
   if (authSummary.reason === 'missing_snapshot') {
     throw createProviderError(
       'DEEPSEEK_AUTH_REQUIRED',

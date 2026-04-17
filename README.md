@@ -34,6 +34,13 @@ node scripts/onboard-deepseek-web.js --profile .browser-profile
 ```
 
 该脚本会尝试附加到当前 `.browser-profile` 对应的 Chromium DevTools 端点，检查 DeepSeek 页面的 `cookie` / `bearer` / `userAgent` 是否齐全，并仅在本机把结果写入 `queue-server/data/deepseek-web-auth.json`；终端输出只显示脱敏摘要，不会直接打印敏感值。
+如果当前没有可附加的调试浏览器，或 `DevToolsActivePort` 已经过期，可改用：
+
+```bash
+node scripts/onboard-deepseek-web.js --profile .browser-profile --launch-browser
+```
+
+该模式会自动用当前 workspace profile 拉起 Chromium、打开 `https://chat.deepseek.com/`，再做一次登录态捕获；在无图形桌面的环境下会自动尝试启用 `Xvfb`。
 
 完成 onboard 后，可直接用真实登录态做一次最小 provider 验证：
 

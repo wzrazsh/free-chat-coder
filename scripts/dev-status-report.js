@@ -25,7 +25,7 @@ const priorities = [
       '自动进化任务可优先走 deepseek-web 或在失败时明确回退到 extension-dom'
     ],
     steps: [
-      '先用真实 `.browser-profile` 登录态运行 `node scripts/onboard-deepseek-web.js --profile .browser-profile`，再执行 `node scripts/verify-deepseek-web-provider.js --prompt "Reply with exactly: FCC_DEEPSEEK_OK"` 做一次真实 provider 验证。',
+      '先用真实 `.browser-profile` 登录态运行 `node scripts/onboard-deepseek-web.js --profile .browser-profile --launch-browser`，再执行 `node scripts/verify-deepseek-web-provider.js --prompt "Reply with exactly: FCC_DEEPSEEK_OK"` 做一次真实 provider 验证。',
       '如果 probe 返回 404 / 405 / response-empty，再优先固化 `queue-server/providers/deepseek-web/client.js` 的 endpoint / requestBody / headers 契约。',
       'provider 实测稳定后，再继续补会话/UI 可视化或更广的端到端回归 coverage。'
     ]
@@ -237,7 +237,7 @@ async function main() {
   lines.push('## 下一次进入会话时建议先做的事');
   lines.push('');
   lines.push('- 先读本文件、`README.md` 和 `git status --short`。');
-  lines.push('- 直接继续 P0-3：先读 `doc/deepseek-zero-token-integration-20260417.md`，再运行 `node scripts/onboard-deepseek-web.js --profile .browser-profile` 和 `node scripts/verify-deepseek-web-provider.js --prompt "Reply with exactly: FCC_DEEPSEEK_OK"` 做真实 provider 验证。');
+  lines.push('- 直接继续 P0-3：先读 `doc/deepseek-zero-token-integration-20260417.md`，再运行 `node scripts/onboard-deepseek-web.js --profile .browser-profile --launch-browser` 和 `node scripts/verify-deepseek-web-provider.js --prompt "Reply with exactly: FCC_DEEPSEEK_OK"` 做真实 provider 验证。');
   lines.push('- 优先检查 `queue-server/providers/deepseek-web/`、`queue-server/routes/tasks.js`、`queue-server/websocket/handler.js`、`queue-server/conversations/store.js`。');
   lines.push('- 如果 probe 返回 404 / 405 / response-empty，先把 `queue-server/providers/deepseek-web/client.js` 的请求契约固化，再扩大真实流量覆盖。');
   lines.push('- 功能改动完成后，先跑聚焦验证，再提交。');
