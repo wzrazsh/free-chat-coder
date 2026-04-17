@@ -9,29 +9,14 @@ const queueCandidates = [8080, 8082, 8083, 8084, 8085, 8086, 8087, 8088, 8089, 8
 
 const priorities = [
   {
-    id: 'P0-1',
-    title: '修复浏览器启动后服务自动拉起',
-    reason: '2026-04-17 已在 Linux 主机上做真实验证：扩展已加载，但仅打开 Chromium 时 8080/5173 没有自动启动。',
-    files: [
-      'chromevideo/background.js',
-      'chromevideo/host/host.js',
-      'chromevideo/popup.js',
-      'chromevideo/sidepanel.js'
-    ],
-    acceptance: [
-      '仅打开带扩展的 Chromium，30 秒内 Queue Server 或 Web Console 按设计自动启动',
-      '无需手动打开 popup 或 sidepanel',
-      '失败时在扩展 UI 或日志中有明确原因'
-    ]
-  },
-  {
     id: 'P0-2',
     title: '补齐扩展到本地服务的端到端回归测试',
-    reason: '目前关键链路主要依赖人工验证，回归成本高，自动进化和 Native Host 的风险无法及时暴露。',
+    reason: '2026-04-17 已重新验证浏览器启动自动拉起链路，但当前关键链路仍主要依赖人工验证，回归成本高。',
     files: [
       'chromevideo/background.js',
       'chromevideo/offscreen.js',
       'chromevideo/host/host.js',
+      'chromevideo/host/install_host.js',
       'queue-server/index.js'
     ],
     acceptance: [
@@ -187,7 +172,12 @@ async function main() {
     '',
     '- 当前项目已完成扩展、Queue Server、Web Console、自动进化和 Native Host 的基础闭环。',
     '- 当前阶段应定义为“稳定化 + 产品化”，而不是继续堆原型能力。',
-    '- 当前最主要的产品阻塞是浏览器启动场景下服务未自动拉起。',
+    '- 浏览器启动场景下服务自动拉起已在 2026-04-17 通过真实验证，当前更需要把这条链路固化为可复用回归测试。',
+    '',
+    '## 最近完成',
+    '',
+    '- P0-1 已完成：`chromevideo/host/install_host.js` 现已支持从浏览器 profile 自动识别扩展 ID，并写入 Chromium / Chrome for Testing 所需的 Native Messaging 清单路径。',
+    '- 2026-04-17 实测：仅打开带扩展的 Chromium，12 秒内 `Queue Server` 与 `Web Console` 均自动拉起。',
     '',
     '## 当前最高优先任务',
     ''
@@ -218,7 +208,7 @@ async function main() {
   lines.push('## 下一次进入会话时建议先做的事');
   lines.push('');
   lines.push('- 先读本文件、`README.md` 和 `git status --short`。');
-  lines.push('- 如果要验证产品链路，优先验证“打开浏览器后自动拉起服务”。');
+  lines.push('- 先把“扩展加载 -> Native Host -> Queue Server/Web Console”整理成可重复执行的回归脚本。');
   lines.push('- 功能改动完成后，先验证，再提交。');
   lines.push('');
 
