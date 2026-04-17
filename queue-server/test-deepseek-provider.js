@@ -270,6 +270,68 @@ async function main() {
 
     writeAuthSnapshot(storePath, {
       auth: {
+        bearerToken: 'default',
+        bearerSource: 'localStorage:localStorage.APMPLUS__cache__server__config__675113.sample.sample_granularity',
+        pageUrl: 'https://chat.deepseek.com/'
+      }
+    });
+    const apmPlusInspection = deepseekWebProvider.inspectAuthState(storePath);
+    assert.strictEqual(apmPlusInspection.ready, false);
+    assert.strictEqual(apmPlusInspection.reason, 'telemetry_token');
+    assert.strictEqual(
+      apmPlusInspection.bearerSource,
+      'localStorage:localStorage.APMPLUS__cache__server__config__675113.sample.sample_granularity'
+    );
+
+    try {
+      await providerRegistry.executeTask({
+        id: 'task-deepseek-auth-apmplus-token',
+        prompt: 'hello',
+        options: {
+          provider: 'deepseek-web',
+          authStorePath: storePath
+        }
+      });
+      assert.fail('Expected deepseek-web execution to fail when auth snapshot bearer source is APMPLUS telemetry config.');
+    } catch (error) {
+      assert.strictEqual(error.code, 'DEEPSEEK_AUTH_TOKEN_SOURCE_INVALID');
+      assert.strictEqual(error.details.reason, 'telemetry_token');
+      assert.strictEqual(
+        error.details.bearerSource,
+        'localStorage:localStorage.APMPLUS__cache__server__config__675113.sample.sample_granularity'
+      );
+    }
+
+    writeAuthSnapshot(storePath, {
+      auth: {
+        bearerToken: 'sms',
+        bearerSource: 'localStorage:localStorage.__appKit_@deepseek/chat_lastSessionValue.value.loginMethod',
+        pageUrl: 'https://chat.deepseek.com/'
+      }
+    });
+    const weakSignalInspection = deepseekWebProvider.inspectAuthState(storePath);
+    assert.strictEqual(weakSignalInspection.ready, false);
+    assert.strictEqual(weakSignalInspection.reason, 'incomplete_snapshot');
+    assert.deepStrictEqual(weakSignalInspection.missing, ['bearerToken']);
+
+    try {
+      await providerRegistry.executeTask({
+        id: 'task-deepseek-auth-weak-signal-token',
+        prompt: 'hello',
+        options: {
+          provider: 'deepseek-web',
+          authStorePath: storePath
+        }
+      });
+      assert.fail('Expected deepseek-web execution to fail when auth snapshot only contains short session metadata.');
+    } catch (error) {
+      assert.strictEqual(error.code, 'DEEPSEEK_AUTH_INCOMPLETE');
+      assert.strictEqual(error.details.reason, 'incomplete_snapshot');
+      assert.deepStrictEqual(error.details.missing, ['bearerToken']);
+    }
+
+    writeAuthSnapshot(storePath, {
+      auth: {
         bearerToken: '{"value":null,"__version":"0"}',
         bearerSource: 'localStorage:localStorage.userToken',
         pageUrl: 'https://chat.deepseek.com/'

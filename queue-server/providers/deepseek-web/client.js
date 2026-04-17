@@ -3,6 +3,7 @@ const https = require('https');
 
 const {
   DEFAULT_STORE_PATH,
+  getRejectedBearerCandidateReason,
   getAuthPageReason,
   isAuthPageUrl,
   isRejectedBearerSource,
@@ -65,6 +66,22 @@ function inspectAuthState(storePath) {
   const auth = authState.auth || {};
   const missing = ['cookieHeader', 'bearerToken', 'userAgent']
     .filter((field) => !auth[field]);
+  const persistedBearerSource = String(auth.bearerSource || '');
+  const persistedBearerSourceSeparatorIndex = persistedBearerSource.indexOf(':');
+  const persistedBearerCandidate = auth.bearerToken
+    ? {
+        source: persistedBearerSourceSeparatorIndex >= 0
+          ? persistedBearerSource.slice(0, persistedBearerSourceSeparatorIndex)
+          : 'persisted',
+        keyPath: persistedBearerSourceSeparatorIndex >= 0
+          ? persistedBearerSource.slice(persistedBearerSourceSeparatorIndex + 1)
+          : persistedBearerSource || 'auth.bearerToken',
+        value: auth.bearerToken
+      }
+    : null;
+  const rejectedBearerReason = persistedBearerCandidate
+    ? getRejectedBearerCandidateReason(persistedBearerCandidate)
+    : null;
   const challengeDetected = Boolean(
     authState?.debug?.challengeDetected
       || /aws_?waf|challenge/i.test(String(auth.bearerSource || ''))
@@ -75,7 +92,8 @@ function inspectAuthState(storePath) {
       || isAuthPageUrl(auth.pageUrl)
   );
   const authPageReason = authState?.debug?.authPageReason || getAuthPageReason(auth.pageUrl);
-  const invalidTokenSource = isRejectedBearerSource(auth.bearerSource);
+  const invalidTokenSource = rejectedBearerReason === 'telemetry_source' || isRejectedBearerSource(auth.bearerSource);
+  const weakTokenSignal = rejectedBearerReason === 'weak_signal';
 
   if (challengeDetected) {
     return {
@@ -108,6 +126,19 @@ function inspectAuthState(storePath) {
       ready: false,
       storePath: resolvedStorePath,
       reason: 'telemetry_token',
+      missing: ['bearerToken'],
+      capturedAt: authState.capturedAt || authState.savedAt || null,
+      pageUrl: auth.pageUrl || null,
+      profilePath: authState.profilePath || null,
+      bearerSource: auth.bearerSource || null
+    };
+  }
+
+  if (weakTokenSignal) {
+    return {
+      ready: false,
+      storePath: resolvedStorePath,
+      reason: 'incomplete_snapshot',
       missing: ['bearerToken'],
       capturedAt: authState.capturedAt || authState.savedAt || null,
       pageUrl: auth.pageUrl || null,

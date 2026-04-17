@@ -15,7 +15,11 @@ const DEFAULT_ORIGIN = 'https://chat.deepseek.com/';
 const DEFAULT_PROFILE_PATH = path.join(REPO_ROOT, '.browser-profile');
 const DEFAULT_STORE_PATH = path.join(REPO_ROOT, 'queue-server', 'data', 'deepseek-web-auth.json');
 const AUTH_PAGE_PATH_RE = /^\/(?:sign[_-]?in|signin|login|sign[_-]?up|signup|register|forgot(?:[_-]?password)?|password(?:[_-]?reset)?|reset(?:[_-]?password)?)(?:\/|$)/i;
-const TELEMETRY_TOKEN_RE = /(?:^|[._-])(?:__tea_cache|tea_cache|slardar|analytics|tracking|metrics|telemetry|segment|sentry)(?:$|[._-])/i;
+const TELEMETRY_TOKEN_RE = /(?:^|[._-])(?:__tea|__tea_cache|tea_cache|slardar|analytics|tracking|metrics|telemetry|segment|sentry|apmplus|server[_-]*config|sample[_-]?(?:granularity|rate))(?:$|[._-])/i;
+const STRONG_BEARER_KEY_RE = /bearer|authorization|access.?token|id.?token|auth.?token|user.?token|jwt/i;
+const SESSIONISH_KEY_RE = /session/i;
+const NON_TOKEN_METADATA_RE = /(?:^|[._-])(?:login(?:[_-]?method)?|method|type|mode|provider|strategy|granularity|rate)(?:$|[._-])/i;
+const MIN_SESSIONISH_BEARER_LENGTH = 16;
 
 function resolveInputPath(targetPath) {
   if (!targetPath) {
@@ -584,36 +588,88 @@ function normalizeBearerToken(value, depth = 0) {
   return null;
 }
 
-function isRejectedBearerCandidate(candidate) {
+function isQualifiedBearerCandidate(candidate) {
+  const keyPath = String(candidate?.keyPath || '');
+  const rawValue = String(candidate?.value || '');
+  const normalizedValue = String(candidate?.normalizedValue || normalizeBearerToken(candidate?.value) || '');
+
+  if (!normalizedValue) {
+    return false;
+  }
+
+  if (STRONG_BEARER_KEY_RE.test(keyPath)) {
+    return true;
+  }
+
+  if (/^Bearer\s+/i.test(rawValue)) {
+    return true;
+  }
+
+  if (/^[A-Za-z0-9\-_]+\.[A-Za-z0-9\-_]+\.[A-Za-z0-9\-_]+$/.test(normalizedValue)) {
+    return true;
+  }
+
+  if (NON_TOKEN_METADATA_RE.test(keyPath)) {
+    return false;
+  }
+
+  return SESSIONISH_KEY_RE.test(keyPath) && normalizedValue.length >= MIN_SESSIONISH_BEARER_LENGTH;
+}
+
+function getRejectedBearerCandidateReason(candidate) {
   const keyPath = String(candidate?.keyPath || '').toLowerCase();
   const value = String(candidate?.value || '');
   const normalizedValue = value.toLowerCase();
 
-  return keyPath.includes('aws_waf')
+  if (keyPath.includes('aws_waf')
     || keyPath.includes('awswaf')
     || keyPath.includes('challenge')
     || keyPath.includes('captcha')
-    || isRejectedBearerSource(keyPath)
-    || (keyPath.includes('timestamp') && /^\d{8,}$/.test(value.trim()))
-    || normalizedValue.includes('awswafintegration');
+    || normalizedValue.includes('awswafintegration')) {
+    return 'challenge_artifact';
+  }
+
+  if (isRejectedBearerSource(keyPath)) {
+    return 'telemetry_source';
+  }
+
+  if (keyPath.includes('timestamp') && /^\d{8,}$/.test(value.trim())) {
+    return 'timestamp_value';
+  }
+
+  if (!isQualifiedBearerCandidate(candidate)) {
+    return 'weak_signal';
+  }
+
+  return null;
 }
 
 function selectBearerCandidate(candidates) {
   if (!Array.isArray(candidates) || candidates.length === 0) {
-    return null;
+    return {
+      candidate: null,
+      rejected: []
+    };
   }
 
   const ranked = candidates
     .map((candidate) => ({
       ...candidate,
       score: scoreBearerCandidate(candidate),
-      normalizedValue: normalizeBearerToken(candidate.value)
+      normalizedValue: normalizeBearerToken(candidate.value),
+      rejectionReason: null
     }))
     .filter((candidate) => candidate.normalizedValue)
-    .filter((candidate) => !isRejectedBearerCandidate(candidate))
+    .map((candidate) => ({
+      ...candidate,
+      rejectionReason: getRejectedBearerCandidateReason(candidate)
+    }))
     .sort((left, right) => right.score - left.score);
 
-  return ranked[0] || null;
+  return {
+    candidate: ranked.find((candidate) => !candidate.rejectionReason) || null,
+    rejected: ranked.filter((candidate) => candidate.rejectionReason)
+  };
 }
 
 function createCaptureResult(origin, profilePath) {
@@ -772,13 +828,22 @@ async function captureAuthState(options = {}) {
         addRecommendation(result, `Open ${normalizedOrigin.origin} in the workspace browser profile, refresh until the full chat app loads, then rerun onboarding.`);
       }
 
-      const bearerCandidate = result.debug.authPageDetected
+      const bearerSelection = result.debug.authPageDetected
         ? null
         : selectBearerCandidate(pageState?.tokenCandidates || []);
+      const bearerCandidate = bearerSelection?.candidate || null;
       if (bearerCandidate) {
         result.auth.bearerToken = bearerCandidate.normalizedValue;
         result.auth.bearerSource = `${bearerCandidate.source}:${bearerCandidate.keyPath}`;
       } else if (!result.debug.challengeDetected && !result.debug.authPageDetected) {
+        const telemetryCandidate = Array.isArray(bearerSelection?.rejected)
+          ? bearerSelection.rejected.find((candidate) => candidate.rejectionReason === 'telemetry_source')
+          : null;
+        if (telemetryCandidate) {
+          const rejectedSource = `${telemetryCandidate.source}:${telemetryCandidate.keyPath}`;
+          addIssue(result, `Rejected telemetry-like bearer candidate from ${rejectedSource}; keep searching for the actual chat auth token before persisting.`);
+          addRecommendation(result, 'Wait for the authenticated chat app to finish loading so DeepSeek auth storage is populated instead of analytics config values.');
+        }
         addIssue(result, `No bearer-like token could be found in DeepSeek page storage for ${normalizedOrigin.origin}.`);
         addRecommendation(result, 'Keep the DeepSeek tab logged in and fully loaded so local/session storage is populated.');
       }
@@ -914,6 +979,7 @@ module.exports = {
   DEFAULT_STORE_PATH,
   captureAuthState,
   clearAuthState,
+  getRejectedBearerCandidateReason,
   getAuthPageReason,
   isAuthPageUrl,
   isRejectedBearerSource,

@@ -12,7 +12,21 @@ const {
   summarizeCapture
 } = require('./queue-server/providers/deepseek-web/auth');
 
-async function createFakeDevToolsServer() {
+async function createFakeDevToolsServer(options = {}) {
+  const pageState = options.pageState || {
+    href: 'https://chat.deepseek.com/',
+    title: 'DeepSeek Chat',
+    origin: 'https://chat.deepseek.com',
+    userAgent: 'Fake Chromium UA',
+    localStorageKeys: ['accessToken'],
+    sessionStorageKeys: [],
+    tokenCandidates: [{
+      source: 'localStorage',
+      keyPath: 'localStorage.accessToken',
+      value: 'Bearer fake-bearer-token',
+      valueLength: 24
+    }]
+  };
   const httpServer = http.createServer((req, res) => {
     if (req.url === '/json/version') {
       res.writeHead(200, { 'Content-Type': 'application/json' });
@@ -97,20 +111,7 @@ async function createFakeDevToolsServer() {
           result: {
             result: {
               type: 'object',
-              value: {
-                href: 'https://chat.deepseek.com/',
-                title: 'DeepSeek Chat',
-                origin: 'https://chat.deepseek.com',
-                userAgent: 'Fake Chromium UA',
-                localStorageKeys: ['accessToken'],
-                sessionStorageKeys: [],
-                tokenCandidates: [{
-                  source: 'localStorage',
-                  keyPath: 'localStorage.accessToken',
-                  value: 'Bearer fake-bearer-token',
-                  valueLength: 24
-                }]
-              }
+              value: pageState
             }
           }
         }));
@@ -217,9 +218,127 @@ async function testCaptureHandlesStaleDebuggerPort() {
   }
 }
 
+async function testCaptureRejectsTelemetryConfigCandidate() {
+  const server = await createFakeDevToolsServer({
+    pageState: {
+      href: 'https://chat.deepseek.com/',
+      title: 'DeepSeek Chat',
+      origin: 'https://chat.deepseek.com',
+      userAgent: 'Fake Chromium UA',
+      localStorageKeys: ['APMPLUS__cache__server__config__675113'],
+      sessionStorageKeys: [],
+      tokenCandidates: [{
+        source: 'localStorage',
+        keyPath: 'localStorage.APMPLUS__cache__server__config__675113.sample.sample_granularity',
+        value: 'default',
+        valueLength: 7
+      }]
+    }
+  });
+  const profilePath = createTempProfile();
+  const devToolsPath = path.join(profilePath, 'DevToolsActivePort');
+  fs.writeFileSync(devToolsPath, `${server.port}\n/devtools/browser/browser-1\n`, 'utf8');
+
+  try {
+    const capture = await captureAuthState({
+      profilePath,
+      origin: 'https://chat.deepseek.com/'
+    });
+
+    assert.strictEqual(capture.ok, false);
+    assert.strictEqual(capture.auth.cookieHeader, 'ds_session=cookie-123');
+    assert.strictEqual(capture.auth.bearerToken, null);
+    assert.strictEqual(capture.auth.bearerSource, null);
+    assert.ok(capture.issues.some((issue) => issue.includes('Rejected telemetry-like bearer candidate')));
+    assert.ok(capture.issues.some((issue) => issue.includes('No bearer-like token could be found')));
+  } finally {
+    fs.rmSync(profilePath, { recursive: true, force: true });
+    await server.close();
+  }
+}
+
+async function testCaptureRejectsWeakSessionMetadataCandidate() {
+  const server = await createFakeDevToolsServer({
+    pageState: {
+      href: 'https://chat.deepseek.com/',
+      title: 'DeepSeek Chat',
+      origin: 'https://chat.deepseek.com',
+      userAgent: 'Fake Chromium UA',
+      localStorageKeys: ['__appKit_@deepseek/chat_lastSessionValue'],
+      sessionStorageKeys: [],
+      tokenCandidates: [{
+        source: 'localStorage',
+        keyPath: 'localStorage.__appKit_@deepseek/chat_lastSessionValue.value.loginMethod',
+        value: 'sms',
+        valueLength: 3
+      }]
+    }
+  });
+  const profilePath = createTempProfile();
+  const devToolsPath = path.join(profilePath, 'DevToolsActivePort');
+  fs.writeFileSync(devToolsPath, `${server.port}\n/devtools/browser/browser-1\n`, 'utf8');
+
+  try {
+    const capture = await captureAuthState({
+      profilePath,
+      origin: 'https://chat.deepseek.com/'
+    });
+
+    assert.strictEqual(capture.ok, false);
+    assert.strictEqual(capture.auth.cookieHeader, 'ds_session=cookie-123');
+    assert.strictEqual(capture.auth.bearerToken, null);
+    assert.strictEqual(capture.auth.bearerSource, null);
+    assert.ok(capture.issues.some((issue) => issue.includes('No bearer-like token could be found')));
+  } finally {
+    fs.rmSync(profilePath, { recursive: true, force: true });
+    await server.close();
+  }
+}
+
+async function testCaptureRejectsTeaSessionTelemetryCandidate() {
+  const server = await createFakeDevToolsServer({
+    pageState: {
+      href: 'https://chat.deepseek.com/',
+      title: 'DeepSeek Chat',
+      origin: 'https://chat.deepseek.com',
+      userAgent: 'Fake Chromium UA',
+      localStorageKeys: [],
+      sessionStorageKeys: ['__tea_session_id_20006317'],
+      tokenCandidates: [{
+        source: 'sessionStorage',
+        keyPath: 'sessionStorage.__tea_session_id_20006317.sessionId',
+        value: '550e8400-e29b-41d4-a716-446655440000',
+        valueLength: 36
+      }]
+    }
+  });
+  const profilePath = createTempProfile();
+  const devToolsPath = path.join(profilePath, 'DevToolsActivePort');
+  fs.writeFileSync(devToolsPath, `${server.port}\n/devtools/browser/browser-1\n`, 'utf8');
+
+  try {
+    const capture = await captureAuthState({
+      profilePath,
+      origin: 'https://chat.deepseek.com/'
+    });
+
+    assert.strictEqual(capture.ok, false);
+    assert.strictEqual(capture.auth.cookieHeader, 'ds_session=cookie-123');
+    assert.strictEqual(capture.auth.bearerToken, null);
+    assert.strictEqual(capture.auth.bearerSource, null);
+    assert.ok(capture.issues.some((issue) => issue.includes('Rejected telemetry-like bearer candidate')));
+  } finally {
+    fs.rmSync(profilePath, { recursive: true, force: true });
+    await server.close();
+  }
+}
+
 async function main() {
   await testCaptureAuthStateFromFakeDevTools();
   await testCaptureHandlesStaleDebuggerPort();
+  await testCaptureRejectsTelemetryConfigCandidate();
+  await testCaptureRejectsWeakSessionMetadataCandidate();
+  await testCaptureRejectsTeaSessionTelemetryCandidate();
   console.log('deepseek-web auth checks passed');
 }
 

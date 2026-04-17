@@ -326,6 +326,69 @@ async function runTelemetryTokenScenario() {
   }
 }
 
+async function runApmPlusTelemetryTokenScenario() {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'fcc-deepseek-probe-apmplus-token-'));
+  const storePath = path.join(tempDir, 'deepseek-web-auth.json');
+  writeAuthSnapshot(storePath, {
+    auth: {
+      bearerToken: 'default',
+      bearerSource: 'localStorage:localStorage.APMPLUS__cache__server__config__675113.sample.sample_granularity'
+    }
+  });
+
+  try {
+    const probeResult = await runProbe([
+      '--store-path',
+      storePath,
+      '--json'
+    ]);
+
+    assert.notStrictEqual(probeResult.status, 0, probeResult.stdout);
+
+    const output = JSON.parse(probeResult.stdout);
+    assert.strictEqual(output.ok, false);
+    assert.strictEqual(output.auth.ready, false);
+    assert.strictEqual(output.auth.reason, 'telemetry_token');
+    assert.strictEqual(output.probe.ok, false);
+    assert.strictEqual(output.probe.error.code, 'DEEPSEEK_AUTH_TOKEN_SOURCE_INVALID');
+    assert.ok(output.nextSteps.some((step) => step.includes('telemetry token')));
+  } finally {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
+}
+
+async function runWeakSignalTokenScenario() {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'fcc-deepseek-probe-weak-signal-token-'));
+  const storePath = path.join(tempDir, 'deepseek-web-auth.json');
+  writeAuthSnapshot(storePath, {
+    auth: {
+      bearerToken: 'sms',
+      bearerSource: 'localStorage:localStorage.__appKit_@deepseek/chat_lastSessionValue.value.loginMethod'
+    }
+  });
+
+  try {
+    const probeResult = await runProbe([
+      '--store-path',
+      storePath,
+      '--json'
+    ]);
+
+    assert.notStrictEqual(probeResult.status, 0, probeResult.stdout);
+
+    const output = JSON.parse(probeResult.stdout);
+    assert.strictEqual(output.ok, false);
+    assert.strictEqual(output.auth.ready, false);
+    assert.strictEqual(output.auth.reason, 'incomplete_snapshot');
+    assert.deepStrictEqual(output.auth.missing, ['bearerToken']);
+    assert.strictEqual(output.probe.ok, false);
+    assert.strictEqual(output.probe.error.code, 'DEEPSEEK_AUTH_INCOMPLETE');
+    assert.ok(output.nextSteps.some((step) => step.includes('onboard-deepseek-web.js')));
+  } finally {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
+}
+
 async function runEmptyWrappedTokenScenario() {
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'fcc-deepseek-probe-empty-wrapper-'));
   const storePath = path.join(tempDir, 'deepseek-web-auth.json');
@@ -396,6 +459,8 @@ async function main() {
   await runChallengeAuthScenario();
   await runLoggedOutAuthScenario();
   await runTelemetryTokenScenario();
+  await runApmPlusTelemetryTokenScenario();
+  await runWeakSignalTokenScenario();
   await runEmptyWrappedTokenScenario();
   await runInvalidTokenScenario();
   console.log('PASS test-deepseek-provider-probe');
