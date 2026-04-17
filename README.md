@@ -21,7 +21,10 @@
 
 ```bash
 node validate-environment.js
+node validate-environment.js --profile .browser-profile
 ```
+
+`validate-environment.js` 现在会集中输出扩展 ID、Native Host manifest 安装位置、Queue Server / Web Console 端口状态，以及浏览器、Node 模块和可选 `Xvfb` 依赖的诊断结果；如果存在阻塞问题，会直接给出可执行修复步骤。
 
 ## 安装依赖
 
@@ -82,6 +85,12 @@ curl http://127.0.0.1:8080/health
 
 ```bash
 node chromevideo/host/install_host.js
+```
+
+如果想确认安装结果是否和当前扩展 ID 对齐，建议随后执行：
+
+```bash
+node validate-environment.js --profile .browser-profile
 ```
 
 安装脚本现在同时支持 Windows 和 Linux：

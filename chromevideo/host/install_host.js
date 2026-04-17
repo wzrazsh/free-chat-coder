@@ -91,20 +91,23 @@ function detectExtensionIdFromPreferencesFile(preferencesPath, extensionPath = E
   };
 }
 
-function getDefaultProfileCandidates() {
-  const home = os.homedir();
+function getDefaultProfileCandidatesForWorkspace(workspaceDir = WORKSPACE_DIR, homeDir = os.homedir()) {
   return Array.from(new Set([
-    path.join(WORKSPACE_DIR, '.browser-profile'),
-    path.join(home, '.config/chromium'),
-    path.join(home, '.config/google-chrome'),
-    path.join(home, '.config/google-chrome-for-testing'),
-    path.join(home, '.config/google-chrome-beta'),
-    path.join(home, '.config/google-chrome-unstable'),
-    path.join(home, '.config/BraveSoftware/Brave-Browser'),
-    path.join(home, '.var/app/com.google.Chrome/config/google-chrome'),
-    path.join(home, '.var/app/org.chromium.Chromium/config/chromium'),
-    path.join(home, 'snap/chromium/current/.config/chromium')
+    path.join(workspaceDir, '.browser-profile'),
+    path.join(homeDir, '.config/chromium'),
+    path.join(homeDir, '.config/google-chrome'),
+    path.join(homeDir, '.config/google-chrome-for-testing'),
+    path.join(homeDir, '.config/google-chrome-beta'),
+    path.join(homeDir, '.config/google-chrome-unstable'),
+    path.join(homeDir, '.config/BraveSoftware/Brave-Browser'),
+    path.join(homeDir, '.var/app/com.google.Chrome/config/google-chrome'),
+    path.join(homeDir, '.var/app/org.chromium.Chromium/config/chromium'),
+    path.join(homeDir, 'snap/chromium/current/.config/chromium')
   ]));
+}
+
+function getDefaultProfileCandidates() {
+  return getDefaultProfileCandidatesForWorkspace(WORKSPACE_DIR, os.homedir());
 }
 
 function detectExtensionIdFromProfile(profilePath, extensionPath = EXTENSION_DIR) {
@@ -219,20 +222,43 @@ function installWindowsManifest(jsonPath) {
   console.log('\nSuccess: registered Native Messaging Host in Windows Registry.');
 }
 
-function getLinuxManifestTargets() {
-  const home = os.homedir();
+function getLinuxManifestTargetsForWorkspace(workspaceDir = WORKSPACE_DIR, homeDir = os.homedir()) {
   return Array.from(new Set([
-    path.join(WORKSPACE_DIR, '.browser-profile', 'NativeMessagingHosts', `${HOST_NAME}.json`),
-    path.join(home, '.config/google-chrome/NativeMessagingHosts', `${HOST_NAME}.json`),
-    path.join(home, '.config/google-chrome-for-testing/NativeMessagingHosts', `${HOST_NAME}.json`),
-    path.join(home, '.config/chromium/NativeMessagingHosts', `${HOST_NAME}.json`),
-    path.join(home, '.config/google-chrome-beta/NativeMessagingHosts', `${HOST_NAME}.json`),
-    path.join(home, '.config/google-chrome-unstable/NativeMessagingHosts', `${HOST_NAME}.json`),
-    path.join(home, '.config/BraveSoftware/Brave-Browser/NativeMessagingHosts', `${HOST_NAME}.json`),
-    path.join(home, '.var/app/com.google.Chrome/config/google-chrome/NativeMessagingHosts', `${HOST_NAME}.json`),
-    path.join(home, '.var/app/org.chromium.Chromium/config/chromium/NativeMessagingHosts', `${HOST_NAME}.json`),
-    path.join(home, 'snap/chromium/current/.config/chromium/NativeMessagingHosts', `${HOST_NAME}.json`)
+    path.join(workspaceDir, '.browser-profile', 'NativeMessagingHosts', `${HOST_NAME}.json`),
+    path.join(homeDir, '.config/google-chrome/NativeMessagingHosts', `${HOST_NAME}.json`),
+    path.join(homeDir, '.config/google-chrome-for-testing/NativeMessagingHosts', `${HOST_NAME}.json`),
+    path.join(homeDir, '.config/chromium/NativeMessagingHosts', `${HOST_NAME}.json`),
+    path.join(homeDir, '.config/google-chrome-beta/NativeMessagingHosts', `${HOST_NAME}.json`),
+    path.join(homeDir, '.config/google-chrome-unstable/NativeMessagingHosts', `${HOST_NAME}.json`),
+    path.join(homeDir, '.config/BraveSoftware/Brave-Browser/NativeMessagingHosts', `${HOST_NAME}.json`),
+    path.join(homeDir, '.var/app/com.google.Chrome/config/google-chrome/NativeMessagingHosts', `${HOST_NAME}.json`),
+    path.join(homeDir, '.var/app/org.chromium.Chromium/config/chromium/NativeMessagingHosts', `${HOST_NAME}.json`),
+    path.join(homeDir, 'snap/chromium/current/.config/chromium/NativeMessagingHosts', `${HOST_NAME}.json`)
   ]));
+}
+
+function getLinuxManifestTargets() {
+  return getLinuxManifestTargetsForWorkspace(WORKSPACE_DIR, os.homedir());
+}
+
+function getNativeHostManifestCandidates(options = {}) {
+  const platform = options.platform || process.platform;
+  const workspaceDir = options.workspaceDir || WORKSPACE_DIR;
+  const homeDir = options.homeDir || os.homedir();
+
+  if (platform === 'linux') {
+    return getLinuxManifestTargetsForWorkspace(workspaceDir, homeDir);
+  }
+
+  if (platform === 'win32') {
+    return [options.manifestPath || path.join(workspaceDir, 'chromevideo', 'host', `${HOST_NAME}.json`)];
+  }
+
+  return [options.manifestPath || path.join(workspaceDir, 'chromevideo', 'host', `${HOST_NAME}.json`)];
+}
+
+function findInstalledManifestFiles(options = {}) {
+  return getNativeHostManifestCandidates(options).filter((target) => fs.existsSync(target));
 }
 
 function installLinuxManifest(manifest) {
@@ -381,7 +407,11 @@ module.exports = {
   detectExtensionIdFromPreferencesFile,
   detectExtensionIdFromProfile,
   getDefaultProfileCandidates,
+  getDefaultProfileCandidatesForWorkspace,
+  findInstalledManifestFiles,
   getLinuxManifestTargets,
+  getLinuxManifestTargetsForWorkspace,
+  getNativeHostManifestCandidates,
   getPreferenceFileCandidates,
   installHost,
   isValidExtensionId,

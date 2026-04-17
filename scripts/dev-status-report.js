@@ -9,20 +9,6 @@ const queueCandidates = [8080, 8082, 8083, 8084, 8085, 8086, 8087, 8088, 8089, 8
 
 const priorities = [
   {
-    id: 'P1-1',
-    title: '增加安装自检与诊断输出',
-    reason: '浏览器启动自动拉起已补齐回归覆盖后，当前更大的用户阻力变成安装与排障路径不透明。',
-    files: [
-      'validate-environment.js',
-      'chromevideo/host/install_host.js',
-      'README.md'
-    ],
-    acceptance: [
-      '单条命令输出扩展 ID、Native Host 安装位置、端口状态、缺失依赖',
-      '失败时给出可执行修复步骤'
-    ]
-  },
-  {
     id: 'P1-2',
     title: '收紧自动进化的验证与回滚',
     reason: '自动进化链路已具备写代码能力，但预验证、结果审计和失败回滚仍不够硬。',
@@ -172,11 +158,13 @@ async function main() {
     '- 当前项目已完成扩展、Queue Server、Web Console、自动进化和 Native Host 的基础闭环。',
     '- 当前阶段应定义为“稳定化 + 产品化”，而不是继续堆原型能力。',
     '- 浏览器启动场景下服务自动拉起已在 2026-04-17 完成真实验证，并已补齐可复用的端到端回归脚本。',
+    '- 安装自检命令已在 2026-04-17 补齐，可直接输出扩展 ID、Native Host 安装位置、端口状态与修复建议。',
     '',
     '## 最近完成',
     '',
     '- P0-1 已完成：`chromevideo/host/install_host.js` 现已支持从浏览器 profile 自动识别扩展 ID，并写入 Chromium / Chrome for Testing 所需的 Native Messaging 清单路径。',
     '- P0-2 已完成：新增 `test-playwright-e2e.js`，可在真实 `.browser-profile` 上验证扩展加载、Native Host 拉起、Queue `/health`、Web Console 与 offscreen WebSocket 链路。',
+    '- P1-1 已完成：`validate-environment.js` 现已输出扩展 ID、Native Host manifest 位置、浏览器 / Node 模块依赖与 Queue/Web Console 端口诊断，并给出可执行修复步骤。',
     '- `scripts/nightly-validate.sh` 已接入该回归测试，在具备浏览器 / Xvfb / 依赖时可自动执行。',
     '',
     '## 当前最高优先任务',
@@ -208,8 +196,9 @@ async function main() {
   lines.push('## 下一次进入会话时建议先做的事');
   lines.push('');
   lines.push('- 先读本文件、`README.md` 和 `git status --short`。');
-  lines.push('- 先补一条安装自检命令，把扩展 ID、Native Host 清单位置、浏览器/端口/依赖异常直接打印出来。');
-  lines.push('- 功能改动完成后，先验证，再提交。');
+  lines.push('- 直接进入 P1-2：给自动进化链路补最小预执行验证、失败回滚和结果审计。');
+  lines.push('- 优先检查 `queue-server/evolution/evolve-executor.js`、`queue-server/test-validator/`、`queue-server/actions/confirm-manager.js`。');
+  lines.push('- 功能改动完成后，先跑聚焦验证，再提交。');
   lines.push('');
 
   fs.mkdirSync(path.dirname(outputPath), { recursive: true });

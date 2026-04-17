@@ -7,7 +7,10 @@ const {
   autoDetectExtensionId,
   detectExtensionIdFromPreferencesFile,
   detectExtensionIdFromProfile,
+  findInstalledManifestFiles,
+  getDefaultProfileCandidatesForWorkspace,
   getLinuxManifestTargets,
+  getLinuxManifestTargetsForWorkspace,
   isValidExtensionId,
   parseArgs
 } = require('./install_host');
@@ -109,11 +112,46 @@ function testAutoDetectExtensionIdFromExplicitProfile() {
   });
 }
 
+function testWorkspaceProfileCandidatesPreferWorkspaceProfile() {
+  const tempDir = makeTempDir();
+  const homeDir = path.join(tempDir, 'home');
+  const candidates = getDefaultProfileCandidatesForWorkspace(tempDir, homeDir);
+
+  assert.strictEqual(candidates[0], path.join(tempDir, '.browser-profile'));
+  assert(candidates.includes(path.join(homeDir, '.config/chromium')));
+}
+
 function testLinuxManifestTargetsIncludeProjectProfile() {
   const targets = getLinuxManifestTargets();
 
   assert(targets.some((target) => target.includes(path.join('.browser-profile', 'NativeMessagingHosts'))));
   assert(targets.some((target) => target.includes(path.join('google-chrome-for-testing', 'NativeMessagingHosts'))));
+}
+
+function testLinuxManifestTargetsForWorkspace() {
+  const tempDir = makeTempDir();
+  const homeDir = path.join(tempDir, 'home');
+  const targets = getLinuxManifestTargetsForWorkspace(tempDir, homeDir);
+
+  assert(targets.includes(path.join(tempDir, '.browser-profile', 'NativeMessagingHosts', 'com.trae.freechatcoder.host.json')));
+  assert(targets.includes(path.join(homeDir, '.config/google-chrome/NativeMessagingHosts', 'com.trae.freechatcoder.host.json')));
+}
+
+function testFindInstalledManifestFiles() {
+  const tempDir = makeTempDir();
+  const homeDir = path.join(tempDir, 'home');
+  const target = path.join(tempDir, '.browser-profile', 'NativeMessagingHosts', 'com.trae.freechatcoder.host.json');
+
+  fs.mkdirSync(path.dirname(target), { recursive: true });
+  fs.writeFileSync(target, '{}', 'utf8');
+
+  const found = findInstalledManifestFiles({
+    workspaceDir: tempDir,
+    homeDir,
+    platform: 'linux'
+  });
+
+  assert.deepStrictEqual(found, [target]);
 }
 
 function main() {
@@ -122,7 +160,10 @@ function main() {
   testDetectExtensionIdFromPreferencesFile();
   testDetectExtensionIdFromProfile();
   testAutoDetectExtensionIdFromExplicitProfile();
+  testWorkspaceProfileCandidatesPreferWorkspaceProfile();
   testLinuxManifestTargetsIncludeProjectProfile();
+  testLinuxManifestTargetsForWorkspace();
+  testFindInstalledManifestFiles();
   console.log('install host checks passed');
 }
 
