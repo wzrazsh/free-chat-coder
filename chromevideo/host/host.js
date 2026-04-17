@@ -242,8 +242,18 @@ function hasLiveServiceProcess(name) {
 
 function startServer(name) {
   const service = SERVICES[name];
-  if (!service || !fs.existsSync(service.args[0])) {
-    return false;
+  if (!service) {
+    return {
+      ok: false,
+      error: `Unknown service: ${name}`
+    };
+  }
+
+  if (!fs.existsSync(service.args[0])) {
+    return {
+      ok: false,
+      error: `Missing launcher for ${name}: ${service.args[0]}`
+    };
   }
 
   try {
@@ -272,10 +282,15 @@ function startServer(name) {
       void updateRecordedListenerPid(name);
     }, 3000);
 
-    return true;
+    return {
+      ok: true
+    };
   } catch (error) {
     removeServiceRecord(name);
-    return false;
+    return {
+      ok: false,
+      error: error.message || String(error)
+    };
   }
 }
 
@@ -345,14 +360,28 @@ async function processCommand(msg) {
   if (cmd === 'start_queue') {
     const status = await getStatus();
     if (!status.queueServerRunning && !hasLiveServiceProcess('SOLOCoder-QueueServer')) {
-      startServer('SOLOCoder-QueueServer');
+      const result = startServer('SOLOCoder-QueueServer');
+      if (!result.ok) {
+        sendMessage({
+          type: 'error',
+          message: `Failed to start Queue Server: ${result.error}`
+        });
+        return;
+      }
     }
   } else if (cmd === 'stop_queue') {
     await stopServer('SOLOCoder-QueueServer');
   } else if (cmd === 'start_web') {
     const status = await getStatus();
     if (!status.webConsoleRunning && !hasLiveServiceProcess('SOLOCoder-WebConsole')) {
-      startServer('SOLOCoder-WebConsole');
+      const result = startServer('SOLOCoder-WebConsole');
+      if (!result.ok) {
+        sendMessage({
+          type: 'error',
+          message: `Failed to start Web Console: ${result.error}`
+        });
+        return;
+      }
     }
   } else if (cmd === 'stop_web') {
     await stopServer('SOLOCoder-WebConsole');

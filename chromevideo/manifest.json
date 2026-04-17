@@ -3,6 +3,7 @@
   "name": "DeepSeek Agent Bridge",
   "version": "0.2.0",
   "permissions": [
+    "alarms",
     "offscreen",
     "storage",
     "scripting",

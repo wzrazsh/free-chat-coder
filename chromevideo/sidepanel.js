@@ -674,18 +674,11 @@ function connectHost() {
         updateStatus('queue', msg.queueServerRunning);
         updateStatus('web', msg.webConsoleRunning);
         updateQueuePortLabel(msg.queueServerPort);
-        document.getElementById('error').textContent = '';
-        document.getElementById('setup-hint').style.display = 'none';
+        refreshBootstrapStatus();
         updateConnectionUI(true);
       } else if (msg.type === 'error') {
         document.getElementById('error').textContent = msg.message;
         addLogMessage('system', '⚠️ Host 错误: ' + msg.message);
-      } else if (msg.type === 'evolve_progress') {
-        updateEvolveProgress(msg.progress);
-      } else if (msg.type === 'heartbeat_status') {
-        updateStatus('queue', msg.queueAlive);
-        updateStatus('web', msg.webAlive);
-        updateQueuePortLabel(msg.queueServerPort);
       }
     });
 
@@ -721,6 +714,37 @@ function updateStatus(server, isRunning, customText) {
     textEl.textContent = isRunning ? 'Running' : 'Stopped';
     dotEl.className = 'dot ' + (isRunning ? 'running' : 'stopped');
   }
+}
+
+function applyBootstrapStatus(status) {
+  if (!status) {
+    return;
+  }
+
+  const errorEl = document.getElementById('error');
+  const hintEl = document.getElementById('setup-hint');
+
+  if (status.state === 'error' || status.state === 'warning') {
+    const prefix = status.state === 'error' ? '自动拉起失败' : '自动拉起告警';
+    errorEl.textContent = `${prefix}: ${status.message || '未知错误'}`;
+    hintEl.style.display = 'block';
+    return;
+  }
+
+  if (status.state === 'ok' && errorEl.textContent.startsWith('自动拉起')) {
+    errorEl.textContent = '';
+    hintEl.style.display = 'none';
+  }
+}
+
+function refreshBootstrapStatus() {
+  chrome.runtime.sendMessage({ type: 'get_service_bootstrap_status' }, (response) => {
+    if (chrome.runtime.lastError) {
+      return;
+    }
+
+    applyBootstrapStatus(response?.status || null);
+  });
 }
 
 function sendCommand(command) {
@@ -778,6 +802,9 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     updateStatus('web', msg.webAlive);
     updateQueuePortLabel(msg.queueServerPort);
   }
+  else if (msg.type === 'service_bootstrap_status') {
+    applyBootstrapStatus(msg.status);
+  }
   else if (msg.type === 'evolve_progress') {
     updateEvolveProgress(msg.progress);
   }
@@ -833,6 +860,7 @@ document.getElementById('link-evolve-tab').addEventListener('click', () => {
 // ══════════════════════════════════════════
 
 connectHost();
+refreshBootstrapStatus();
 fetchPendingConfirms();
 loadEvolveState().then(() => {
   fetchExtensionConversations().then(() => {

@@ -504,28 +504,164 @@ class AutoEvolveController {
 const autoEvolveController = new AutoEvolveController();
 
 // ==================== 心跳检测系统 ====================
-const HEARTBEAT_INTERVAL_MS = 30000; // 每30秒检测一次
+const HEARTBEAT_ALARM_NAME = 'solo-coder-service-heartbeat';
+const HEARTBEAT_PERIOD_MINUTES = 0.5; // 30 秒
 const WEB_CONSOLE_PORT = 5173;
-let heartbeatInterval = null;
+const SERVICE_BOOTSTRAP_STATUS_KEY = 'serviceBootstrapStatus';
 let lastHeartbeatStatus = { queue: false, queuePort: null, web: false };
+let lastServiceBootstrapStatus = null;
+let serviceBootstrapPromise = null;
 
 /**
- * 发送心跳检测命令到 Native Host
+ * 发布最新服务状态，供 popup / sidepanel 立即刷新。
  */
-async function sendHeartbeatCommand(command) {
+function publishHeartbeatStatus(queueAlive, queueServerPort, webAlive, force = false) {
+  const statusChanged =
+    force ||
+    lastHeartbeatStatus.queue !== queueAlive ||
+    lastHeartbeatStatus.web !== webAlive ||
+    lastHeartbeatStatus.queuePort !== queueServerPort;
+
+  if (!statusChanged) {
+    return;
+  }
+
+  console.log('[Heartbeat] Status changed - queue:', queueAlive, 'port:', queueServerPort, 'web:', webAlive);
+  lastHeartbeatStatus = { queue: queueAlive, queuePort: queueServerPort, web: webAlive };
+
+  chrome.runtime.sendMessage({
+    type: 'heartbeat_status',
+    queueAlive,
+    queueServerPort,
+    webAlive
+  }).catch(() => {});
+}
+
+async function setServiceBootstrapStatus(status) {
+  lastServiceBootstrapStatus = status;
+  await chrome.storage.local.set({
+    [SERVICE_BOOTSTRAP_STATUS_KEY]: status
+  });
+
+  chrome.runtime.sendMessage({
+    type: 'service_bootstrap_status',
+    status
+  }).catch(() => {});
+}
+
+async function getServiceBootstrapStatus() {
+  if (lastServiceBootstrapStatus) {
+    return lastServiceBootstrapStatus;
+  }
+
+  const data = await chrome.storage.local.get([SERVICE_BOOTSTRAP_STATUS_KEY]);
+  lastServiceBootstrapStatus = data[SERVICE_BOOTSTRAP_STATUS_KEY] || null;
+  return lastServiceBootstrapStatus;
+}
+
+/**
+ * 通过长连接触发 Native Host，保证浏览器启动场景下后台有足够时间完成启动命令。
+ */
+async function sendNativeHostCommand(command, timeoutMs = 7000) {
   return new Promise((resolve) => {
-    try {
-      chrome.runtime.sendNativeMessage(HOST_NAME, command, (response) => {
-        if (chrome.runtime.lastError) {
-          console.log('[Heartbeat] Native host error:', chrome.runtime.lastError.message);
-          resolve(null);
-        } else {
-          resolve(response);
+    let settled = false;
+    let timeoutId = null;
+    let nativePort = null;
+    let lastMessage = null;
+
+    const finish = (result) => {
+      if (settled) {
+        return;
+      }
+
+      settled = true;
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+      }
+
+      if (nativePort) {
+        try {
+          nativePort.disconnect();
+        } catch (error) {
+          // Ignore disconnect races.
         }
+      }
+
+      resolve(result);
+    };
+
+    try {
+      nativePort = chrome.runtime.connectNative(HOST_NAME);
+    } catch (error) {
+      console.log('[Heartbeat] Failed to connect to native host:', error.message || error);
+      resolve({
+        ok: false,
+        error: error.message || String(error)
       });
-    } catch (err) {
-      console.log('[Heartbeat] Send error:', err);
-      resolve(null);
+      return;
+    }
+
+    timeoutId = setTimeout(() => {
+      finish({
+        ok: false,
+        error: `Timeout waiting for native host response to ${command}`
+      });
+    }, timeoutMs);
+
+    nativePort.onMessage.addListener((message) => {
+      lastMessage = message;
+
+      if (message?.type === 'error') {
+        finish({
+          ok: false,
+          error: message.message || `Native host returned an error for ${command}`,
+          response: message
+        });
+        return;
+      }
+
+      if (message?.type === 'status') {
+        finish({
+          ok: true,
+          response: message
+        });
+      }
+    });
+
+    nativePort.onDisconnect.addListener(() => {
+      const runtimeError = chrome.runtime.lastError;
+
+      if (runtimeError) {
+        finish({
+          ok: false,
+          error: runtimeError.message,
+          response: lastMessage
+        });
+        return;
+      }
+
+      if (lastMessage) {
+        finish({
+          ok: true,
+          response: lastMessage
+        });
+        return;
+      }
+
+      finish({
+        ok: false,
+        error: `Native host disconnected before responding to ${command}`
+      });
+    });
+
+    try {
+      nativePort.postMessage({ command });
+    } catch (error) {
+      console.log('[Heartbeat] Failed to send native host command:', error.message || error);
+      finish({
+        ok: false,
+        error: error.message || String(error)
+      });
     }
   });
 }
@@ -565,75 +701,148 @@ async function checkQueueServer() {
 }
 
 /**
- * 心跳检测主函数
+ * 确保定时心跳通过 alarms API 重新唤醒 MV3 service worker。
  */
-async function heartbeatCheck() {
-  console.log('[Heartbeat] Checking services...');
+async function ensureHeartbeatAlarm() {
+  const existingAlarm = await chrome.alarms.get(HEARTBEAT_ALARM_NAME);
+  if (existingAlarm) {
+    return;
+  }
 
-  try {
-    const [queueStatus, webAlive] = await Promise.all([
-      checkQueueServer(),
-      checkPort(WEB_CONSOLE_PORT)
-    ]);
+  await chrome.alarms.create(HEARTBEAT_ALARM_NAME, {
+    delayInMinutes: HEARTBEAT_PERIOD_MINUTES,
+    periodInMinutes: HEARTBEAT_PERIOD_MINUTES
+  });
 
-    const queueAlive = queueStatus.alive;
-    const queueServerPort = queueStatus.port;
+  console.log('[Heartbeat] Alarm scheduled');
+}
 
-    const statusChanged =
-      lastHeartbeatStatus.queue !== queueAlive ||
-      lastHeartbeatStatus.web !== webAlive ||
-      lastHeartbeatStatus.queuePort !== queueServerPort;
+/**
+ * 浏览器启动后立即尝试自愈本地服务，并把结果保存到 storage 里供 UI 诊断。
+ */
+async function ensureLocalServices(reason = 'heartbeat') {
+  if (serviceBootstrapPromise) {
+    return serviceBootstrapPromise;
+  }
 
-    if (statusChanged) {
-      console.log('[Heartbeat] Status changed - queue:', queueAlive, 'port:', queueServerPort, 'web:', webAlive);
-      lastHeartbeatStatus = { queue: queueAlive, queuePort: queueServerPort, web: webAlive };
+  serviceBootstrapPromise = (async () => {
+    console.log('[Heartbeat] Checking services for reason:', reason);
 
-      // 通知 popup 状态更新
-      chrome.runtime.sendMessage({
-        type: 'heartbeat_status',
+    const attemptedCommands = [];
+    const commandResults = [];
+
+    try {
+      const [queueStatusBefore, webAliveBefore] = await Promise.all([
+        checkQueueServer(),
+        checkPort(WEB_CONSOLE_PORT)
+      ]);
+
+      let queueAlive = queueStatusBefore.alive;
+      let queueServerPort = queueStatusBefore.port;
+      let webAlive = webAliveBefore;
+
+      publishHeartbeatStatus(queueAlive, queueServerPort, webAlive);
+
+      if (!queueAlive) {
+        attemptedCommands.push('start_queue');
+        console.log('[Heartbeat] Queue Server not responding, attempting start...');
+        const result = await sendNativeHostCommand('start_queue');
+        commandResults.push({
+          command: 'start_queue',
+          ok: result.ok,
+          error: result.error || null
+        });
+      }
+
+      if (!webAlive) {
+        attemptedCommands.push('start_web');
+        console.log('[Heartbeat] Web Console not responding, attempting start...');
+        const result = await sendNativeHostCommand('start_web');
+        commandResults.push({
+          command: 'start_web',
+          ok: result.ok,
+          error: result.error || null
+        });
+      }
+
+      const [queueStatusAfter, webAliveAfter] = await Promise.all([
+        checkQueueServer(),
+        checkPort(WEB_CONSOLE_PORT)
+      ]);
+
+      queueAlive = queueStatusAfter.alive;
+      queueServerPort = queueStatusAfter.port;
+      webAlive = webAliveAfter;
+
+      publishHeartbeatStatus(queueAlive, queueServerPort, webAlive);
+
+      const startedServices = [];
+      if (!queueStatusBefore.alive && queueAlive) {
+        startedServices.push('Queue Server');
+      }
+      if (!webAliveBefore && webAlive) {
+        startedServices.push('Web Console');
+      }
+
+      const failedServices = [];
+      if (!queueAlive) {
+        failedServices.push('Queue Server');
+      }
+      if (!webAlive) {
+        failedServices.push('Web Console');
+      }
+
+      const failedCommands = commandResults.filter((item) => !item.ok);
+
+      let state = 'ok';
+      let message = startedServices.length > 0
+        ? `Auto-start recovered ${startedServices.join(' and ')}.`
+        : 'Queue Server and Web Console are running.';
+
+      if (failedServices.length > 0) {
+        state = failedCommands.length > 0 ? 'error' : 'warning';
+        message = failedCommands.length > 0
+          ? failedCommands.map((item) => `${item.command}: ${item.error || 'unknown error'}`).join(' | ')
+          : `${failedServices.join(' and ')} still not responding after the auto-start check.`;
+      }
+
+      const status = {
+        state,
+        reason,
+        message,
         queueAlive,
         queueServerPort,
-        webAlive
-      }).catch(() => {});
+        webAlive,
+        attemptedCommands,
+        commandResults,
+        checkedAt: new Date().toISOString()
+      };
+
+      await setServiceBootstrapStatus(status);
+      return status;
+    } catch (error) {
+      console.error('[Heartbeat] Check error:', error);
+
+      const status = {
+        state: 'error',
+        reason,
+        message: error.message || String(error),
+        queueAlive: false,
+        queueServerPort: null,
+        webAlive: false,
+        attemptedCommands,
+        commandResults,
+        checkedAt: new Date().toISOString()
+      };
+
+      await setServiceBootstrapStatus(status);
+      return status;
+    } finally {
+      serviceBootstrapPromise = null;
     }
+  })();
 
-    // 如果服务未启动，自动启动
-    if (!queueAlive) {
-      console.log('[Heartbeat] Queue Server not responding, attempting start...');
-      await sendHeartbeatCommand({ command: 'start_queue' });
-    }
-
-    if (!webAlive) {
-      console.log('[Heartbeat] Web Console not responding, attempting start...');
-      await sendHeartbeatCommand({ command: 'start_web' });
-    }
-
-  } catch (err) {
-    console.error('[Heartbeat] Check error:', err);
-  }
-}
-
-/**
- * 启动心跳检测
- */
-function startHeartbeat() {
-  if (heartbeatInterval) return;
-
-  console.log('[Heartbeat] Starting heartbeat monitor');
-  heartbeatCheck(); // 立即执行一次
-
-  heartbeatInterval = setInterval(heartbeatCheck, HEARTBEAT_INTERVAL_MS);
-}
-
-/**
- * 停止心跳检测
- */
-function stopHeartbeat() {
-  if (heartbeatInterval) {
-    clearInterval(heartbeatInterval);
-    heartbeatInterval = null;
-    console.log('[Heartbeat] Stopped');
-  }
+  return serviceBootstrapPromise;
 }
 
 // Ensure Offscreen document exists
@@ -653,18 +862,32 @@ async function ensureOffscreen() {
   }
 }
 
-// Create on startup or install
+async function initializeBackgroundRuntime(reason) {
+  console.log('[SW] Initializing background runtime:', reason);
+  await ensureOffscreen();
+  await ensureHeartbeatAlarm();
+  await ensureLocalServices(reason);
+}
+
 chrome.runtime.onStartup.addListener(() => {
-  ensureOffscreen();
-  startHeartbeat();
-});
-chrome.runtime.onInstalled.addListener(() => {
-  ensureOffscreen();
-  startHeartbeat();
+  void initializeBackgroundRuntime('startup');
 });
 
-// 立即启动心跳检测
-startHeartbeat();
+chrome.runtime.onInstalled.addListener((details) => {
+  void initializeBackgroundRuntime(`installed:${details?.reason || 'unknown'}`);
+});
+
+chrome.alarms.onAlarm.addListener((alarm) => {
+  if (alarm.name !== HEARTBEAT_ALARM_NAME) {
+    return;
+  }
+
+  void ensureLocalServices(`alarm:${alarm.name}`);
+});
+
+void ensureHeartbeatAlarm().catch((error) => {
+  console.error('[Heartbeat] Failed to schedule alarm:', error);
+});
 
 // Receive messages from Offscreen or Content Scripts
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
@@ -744,14 +967,31 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     sendResponse({ accepted: true, requestId, conversationId: msg.conversationId || null });
     return false;
   }
+  else if (msg.type === 'get_service_bootstrap_status') {
+    getServiceBootstrapStatus()
+      .then((status) => sendResponse({ status }))
+      .catch((error) => sendResponse({
+        status: null,
+        error: error.message || String(error)
+      }));
+    return true;
+  }
   // 状态查询接口
   else if (msg.type === 'get_extension_status') {
-    chrome.runtime.sendMessage({ type: 'get_extension_status' }, (offscreenStatus) => {
+    Promise.all([
+      new Promise((resolve) => {
+        chrome.runtime.sendMessage({ type: 'get_extension_status' }, (offscreenStatus) => {
+          resolve(offscreenStatus || null);
+        });
+      }),
+      getServiceBootstrapStatus()
+    ]).then(([offscreenStatus, bootstrapStatus]) => {
       const status = {
         background: {
           currentTaskId: currentBackgroundTaskId,
           isTaskRunning: !!currentBackgroundTaskId,
           offscreenReady: !!offscreenStatus,
+          serviceBootstrap: bootstrapStatus,
           autoEvolve: {
             active: autoEvolveController.active,
             sessionId: autoEvolveController.sessionId
@@ -760,6 +1000,20 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         offscreen: offscreenStatus || { error: 'Offscreen not responding' }
       };
       sendResponse(status);
+    }).catch((error) => {
+      sendResponse({
+        background: {
+          currentTaskId: currentBackgroundTaskId,
+          isTaskRunning: !!currentBackgroundTaskId,
+          offscreenReady: false,
+          serviceBootstrap: null,
+          autoEvolve: {
+            active: autoEvolveController.active,
+            sessionId: autoEvolveController.sessionId
+          }
+        },
+        offscreen: { error: error.message || String(error) }
+      });
     });
     return true; // 异步响应
   }
