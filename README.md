@@ -26,6 +26,14 @@ node validate-environment.js --profile .browser-profile
 
 `validate-environment.js` 现在会集中输出扩展 ID、Native Host manifest 安装位置、Queue Server / Web Console 端口状态，以及浏览器、Node 模块和可选 `Xvfb` 依赖的诊断结果；如果存在阻塞问题，会直接给出可执行修复步骤。
 
+如果要为后续的 `DeepSeek Web Zero-Token` provider 预先采集本机登录态，可运行：
+
+```bash
+node scripts/onboard-deepseek-web.js --profile .browser-profile
+```
+
+该脚本会尝试附加到当前 `.browser-profile` 对应的 Chromium DevTools 端点，检查 DeepSeek 页面的 `cookie` / `bearer` / `userAgent` 是否齐全，并仅在本机把结果写入 `queue-server/data/deepseek-web-auth.json`；终端输出只显示脱敏摘要，不会直接打印敏感值。
+
 ## 安装依赖
 
 仓库不是 workspace 模式，需要分别安装：
