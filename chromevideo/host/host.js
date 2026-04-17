@@ -1,6 +1,7 @@
 const cp = require('child_process');
 const path = require('path');
 const fs = require('fs');
+const net = require('net');
 const sharedConfig = require('../../shared/config');
 const { discoverQueueServer } = require('../../shared/queue-server');
 
@@ -8,6 +9,7 @@ const WORKSPACE = path.resolve(__dirname, '../../');
 const QUEUE_DIR = path.join(WORKSPACE, 'queue-server');
 const WEB_DIR = path.join(WORKSPACE, 'web-console');
 const PID_FILE = path.join(__dirname, '.service-pids.json');
+const IS_WINDOWS = process.platform === 'win32';
 
 const SERVICES = {
   'SOLOCoder-QueueServer': {
@@ -34,6 +36,29 @@ function sendMessage(msg) {
 
 function getPidByPort(port) {
   if (!port) {
+    return null;
+  }
+
+  if (!IS_WINDOWS) {
+    try {
+      const output = cp.execFileSync('ss', ['-ltnpH'], { encoding: 'utf8' });
+      const lines = output.trim().split('\n').filter(Boolean);
+      const portPattern = new RegExp(`:${port}\\b`);
+
+      for (const line of lines) {
+        if (!portPattern.test(line)) {
+          continue;
+        }
+
+        const match = line.match(/pid=(\d+)/);
+        if (match) {
+          return Number(match[1]);
+        }
+      }
+    } catch (error) {
+      // Ignore missing ss output and fall back to null.
+    }
+
     return null;
   }
 
@@ -80,22 +105,78 @@ function isPidAlive(pid) {
   if (!pid) return false;
 
   try {
-    const output = cp.execSync(`tasklist /FI "PID eq ${pid}" /FO CSV /NH`, { windowsHide: true }).toString().trim();
-    return !!output && !output.startsWith('INFO:') && !output.includes('No tasks are running');
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    if (error.code === 'EPERM') {
+      return true;
+    }
+  }
+
+  if (IS_WINDOWS) {
+    try {
+      const output = cp.execSync(`tasklist /FI "PID eq ${pid}" /FO CSV /NH`, { windowsHide: true }).toString().trim();
+      return !!output && !output.startsWith('INFO:') && !output.includes('No tasks are running');
+    } catch (error) {
+      return false;
+    }
+  }
+
+  return false;
+}
+
+function isPortReachable(port, timeoutMs = 800) {
+  return new Promise((resolve) => {
+    const socket = net.createConnection({ host: '127.0.0.1', port });
+    let settled = false;
+
+    const finish = (result) => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      socket.destroy();
+      resolve(result);
+    };
+
+    socket.setTimeout(timeoutMs);
+    socket.once('connect', () => finish(true));
+    socket.once('timeout', () => finish(false));
+    socket.once('error', () => finish(false));
+  });
+}
+
+function killProcess(pid) {
+  if (!pid) {
+    return false;
+  }
+
+  if (IS_WINDOWS) {
+    try {
+      cp.execSync(`taskkill /F /T /PID ${pid}`, { timeout: 5000, windowsHide: true });
+      return true;
+    } catch (error) {
+      return false;
+    }
+  }
+
+  try {
+    process.kill(-pid, 'SIGKILL');
+    return true;
+  } catch (error) {
+    // Fall through and try the direct pid.
+  }
+
+  try {
+    process.kill(pid, 'SIGKILL');
+    return true;
   } catch (error) {
     return false;
   }
 }
 
 function killPidTree(pid) {
-  if (!pid) return false;
-
-  try {
-    cp.execSync(`taskkill /F /T /PID ${pid}`, { timeout: 5000, windowsHide: true });
-    return true;
-  } catch (error) {
-    return false;
-  }
+  return killProcess(pid);
 }
 
 function removeServiceRecord(name) {
@@ -233,11 +314,14 @@ async function stopServer(name) {
 
 async function getStatus() {
   const queueTarget = await discoverQueueService(900);
+  const webConsoleRunning = await isPortReachable(SERVICES['SOLOCoder-WebConsole'].port)
+    || !!getPidByPort(SERVICES['SOLOCoder-WebConsole'].port)
+    || hasLiveServiceProcess('SOLOCoder-WebConsole');
 
   return {
     queueServerRunning: !!queueTarget,
     queueServerPort: queueTarget ? queueTarget.port : null,
-    webConsoleRunning: !!getPidByPort(SERVICES['SOLOCoder-WebConsole'].port)
+    webConsoleRunning
   };
 }
 
@@ -266,7 +350,8 @@ async function processCommand(msg) {
   } else if (cmd === 'stop_queue') {
     await stopServer('SOLOCoder-QueueServer');
   } else if (cmd === 'start_web') {
-    if (!getPidByPort(SERVICES['SOLOCoder-WebConsole'].port) && !hasLiveServiceProcess('SOLOCoder-WebConsole')) {
+    const status = await getStatus();
+    if (!status.webConsoleRunning && !hasLiveServiceProcess('SOLOCoder-WebConsole')) {
       startServer('SOLOCoder-WebConsole');
     }
   } else if (cmd === 'stop_web') {

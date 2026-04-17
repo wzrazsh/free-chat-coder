@@ -84,7 +84,12 @@ curl http://127.0.0.1:8080/health
 node chromevideo/host/install_host.js
 ```
 
-该安装脚本会写入 Windows 注册表并生成 `host.bat`，因此这部分实现目前偏 Windows 环境。
+安装脚本现在同时支持 Windows 和 Linux：
+
+- Windows：写入 Chrome Native Messaging 对应注册表，并生成 `host.bat`
+- Linux：生成 `host.sh`，并把 manifest 写入用户级 Native Messaging 目录，例如 `~/.config/google-chrome/NativeMessagingHosts/`
+
+执行脚本时需要先从 `chrome://extensions` 里复制当前扩展的 ID。
 
 ## 常用命令
 
