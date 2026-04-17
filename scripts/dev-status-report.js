@@ -177,7 +177,7 @@ async function main() {
     '## 最近完成',
     '',
     '- P0-1 已完成：`chromevideo/host/install_host.js` 现已支持从浏览器 profile 自动识别扩展 ID，并写入 Chromium / Chrome for Testing 所需的 Native Messaging 清单路径。',
-    '- 2026-04-17 实测：仅打开带扩展的 Chromium，12 秒内 `Queue Server` 与 `Web Console` 均自动拉起。',
+    '- 2026-04-17 实测：仅打开带扩展的 Chromium，2 秒内 `Queue Server` 与 `Web Console` 均自动拉起。',
     '',
     '## 当前最高优先任务',
     ''
