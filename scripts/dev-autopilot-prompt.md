@@ -18,6 +18,11 @@ Before making decisions, read:
 1. Fix the highest-priority unfinished product blocker in `doc/project-roadmap-20260417.md`
 2. If that blocker is completed, continue with the next highest-priority item
 3. If the previous run failed or stalled, first inspect the provided recovery context and continue from there
+4. If the roadmap is temporarily blocked or no explicit backlog item remains, choose the next concrete task yourself from:
+   - full feature validation or regression coverage
+   - reproducible bug fixing with evidence
+   - installation, diagnostics, or observability hardening
+   - the smallest product feature that removes a real usage gap
 
 ## Working rules
 
@@ -30,6 +35,7 @@ Before making decisions, read:
 - Do not modify `AGENTS.md` unless the task explicitly requires it.
 - Do not revert unrelated user changes.
 - Update the status snapshot by running `node scripts/dev-status-report.js` before finishing if you changed the repo or materially changed project state.
+- When you finish one task, identify the best next task so the following scheduled run can continue immediately.
 
 ## Definition of success for a single run
 

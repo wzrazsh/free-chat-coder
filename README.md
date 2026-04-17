@@ -118,6 +118,8 @@ node scripts/sync-config.js
 
 自动开发主管的动态状态保存在 `.workbuddy/autopilot-state.json`，最近一次模型输出保存在 `.workbuddy/autopilot-last-message.md`。
 
+当前自动开发主管还会在单轮 worker 正常结束后自动续跑下一轮，不需要等到下一个 5 分钟窗口；cron 仍然保留，用于健康巡检、卡死恢复和兜底重启。若显式 backlog 暂时跑完，后续轮次会自动转入回归测试、缺陷修复、安装诊断增强或最小可验证功能补齐。
+
 ## 验证建议
 
 至少执行以下检查：

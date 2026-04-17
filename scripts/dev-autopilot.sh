@@ -5,13 +5,16 @@ MODE="${1:-supervisor}"
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-STATE_DIR="$REPO_ROOT/.workbuddy"
+STATE_DIR="${FREE_CHAT_CODER_AUTOPILOT_STATE_DIR:-$REPO_ROOT/.workbuddy}"
 STATE_FILE="$STATE_DIR/autopilot-state.json"
 LAST_MESSAGE_FILE="$STATE_DIR/autopilot-last-message.md"
 LAST_SUPERVISOR_LOG="$STATE_DIR/dev-autopilot.log"
 BASE_PROMPT_FILE="$SCRIPT_DIR/dev-autopilot-prompt.md"
+LOCK_FILE="$STATE_DIR/dev-autopilot.lock"
 STALL_TIMEOUT_SECONDS=1200
 MAX_RUNTIME_SECONDS=3600
+WATCHDOG_POLL_SECONDS="${FREE_CHAT_CODER_AUTOPILOT_WATCHDOG_POLL_SECONDS:-5}"
+FOLLOWUP_DELAY_SECONDS="${FREE_CHAT_CODER_AUTOPILOT_FOLLOWUP_DELAY_SECONDS:-15}"
 
 timestamp() {
   date -Iseconds
@@ -221,6 +224,35 @@ build_prompt_file() {
   fi
 }
 
+run_autopilot_command() {
+  local prompt_file="$1"
+
+  if [ -n "${FREE_CHAT_CODER_AUTOPILOT_EXEC:-}" ]; then
+    FREE_CHAT_CODER_AUTOPILOT_REPO_ROOT="$REPO_ROOT" \
+      FREE_CHAT_CODER_AUTOPILOT_PROMPT_FILE="$prompt_file" \
+      FREE_CHAT_CODER_AUTOPILOT_LAST_MESSAGE_FILE="$LAST_MESSAGE_FILE" \
+      bash -lc "$FREE_CHAT_CODER_AUTOPILOT_EXEC" < "$prompt_file"
+    return
+  fi
+
+  codex exec -C "$REPO_ROOT" -s danger-full-access -o "$LAST_MESSAGE_FILE" < "$prompt_file"
+}
+
+spawn_watchdog() {
+  local run_id="$1"
+  local worker_pid="$2"
+  local chain_budget="${3:-}"
+
+  echo "[autopilot] spawning watchdog for pid=$worker_pid run_id=$run_id chain_budget=${chain_budget:-unlimited}" >> "$LAST_SUPERVISOR_LOG"
+
+  if [ -n "$chain_budget" ]; then
+    nohup "$0" --watch "$run_id" "$worker_pid" "$chain_budget" 9>&- >/dev/null 2>&1 &
+    return
+  fi
+
+  nohup "$0" --watch "$run_id" "$worker_pid" 9>&- >/dev/null 2>&1 &
+}
+
 run_worker() {
   local mode="$1"
   local run_log="$2"
@@ -235,7 +267,7 @@ run_worker() {
   node scripts/dev-status-report.js || true
 
   set +e
-  codex exec -C "$REPO_ROOT" -s danger-full-access -o "$LAST_MESSAGE_FILE" < "$prompt_file"
+  run_autopilot_command "$prompt_file"
   local exit_code=$?
   set -e
 
@@ -246,7 +278,63 @@ run_worker() {
   exit "$exit_code"
 }
 
-run_supervisor() {
+run_watchdog() {
+  local watched_run_id="${1:?missing run id}"
+  local watched_pid="${2:?missing worker pid}"
+  local chain_budget="${3:-}"
+  local attempts=0
+
+  ensure_state_file
+  echo "[autopilot] watchdog waiting for pid=$watched_pid run_id=$watched_run_id chain_budget=${chain_budget:-unlimited}" >> "$LAST_SUPERVISOR_LOG"
+
+  while process_alive "$watched_pid"; do
+    sleep "$WATCHDOG_POLL_SECONDS"
+  done
+
+  while [ "$attempts" -lt 10 ]; do
+    local status
+    status="$(state_get '.status // "idle"')"
+    local current_run_id
+    current_run_id="$(state_get '.currentRunId // empty')"
+
+    if [ "$status" != "running" ] || [ "$current_run_id" != "$watched_run_id" ]; then
+      break
+    fi
+
+    attempts=$((attempts + 1))
+    sleep 1
+  done
+
+  sleep "$FOLLOWUP_DELAY_SECONDS"
+
+  local current_pid
+  current_pid="$(state_get '.pid // 0')"
+  local current_run_id
+  current_run_id="$(state_get '.currentRunId // empty')"
+  local status
+  status="$(state_get '.status // "idle"')"
+
+  if [ "$status" = "running" ] && [ "$current_run_id" != "$watched_run_id" ] && process_alive "$current_pid"; then
+    echo "[autopilot] watchdog observed a newer active run; skipping continuation for run_id=$watched_run_id" >> "$LAST_SUPERVISOR_LOG"
+    exit 0
+  fi
+
+  if [ -n "$chain_budget" ]; then
+    if [ "$chain_budget" -le 0 ]; then
+      echo "[autopilot] watchdog reached chain budget limit for run_id=$watched_run_id" >> "$LAST_SUPERVISOR_LOG"
+      exit 0
+    fi
+
+    echo "[autopilot] watchdog continuing run_id=$watched_run_id with remaining_budget=$((chain_budget - 1))" >> "$LAST_SUPERVISOR_LOG"
+    FREE_CHAT_CODER_AUTOPILOT_CHAIN_BUDGET="$((chain_budget - 1))" "$0" supervisor >> "$LAST_SUPERVISOR_LOG" 2>&1
+    exit 0
+  fi
+
+  echo "[autopilot] watchdog continuing run_id=$watched_run_id without budget limit" >> "$LAST_SUPERVISOR_LOG"
+  "$0" supervisor >> "$LAST_SUPERVISOR_LOG" 2>&1
+}
+
+run_supervisor_locked() {
   ensure_state_file
   cd "$REPO_ROOT"
 
@@ -315,10 +403,23 @@ run_supervisor() {
     build_prompt_file "$mode" "$prompt_file"
   fi
 
-  nohup "$0" --worker "$mode" "$run_log" "$prompt_file" >/dev/null 2>&1 &
+  nohup "$0" --worker "$mode" "$run_log" "$prompt_file" 9>&- >/dev/null 2>&1 &
   local worker_pid=$!
   state_set_start "$worker_pid" "$mode" "$run_log" "$prompt_file" "$run_id"
+  spawn_watchdog "$run_id" "$worker_pid" "${FREE_CHAT_CODER_AUTOPILOT_CHAIN_BUDGET:-}"
   echo "[autopilot] launched worker pid=$worker_pid mode=$mode run_id=$run_id" >> "$LAST_SUPERVISOR_LOG"
+}
+
+run_supervisor() {
+  ensure_state_dir
+  echo "[autopilot] supervisor check started at $(timestamp)" >> "$LAST_SUPERVISOR_LOG"
+  exec 9>"$LOCK_FILE"
+  if ! flock -n 9; then
+    echo "[autopilot] supervisor skipped because another supervisor holds the lock" >> "$LAST_SUPERVISOR_LOG"
+    exit 0
+  fi
+
+  run_supervisor_locked
 }
 
 case "$MODE" in
@@ -327,6 +428,9 @@ case "$MODE" in
     ;;
   --worker)
     run_worker "${2:-normal}" "${3:?missing run log}" "${4:?missing prompt file}"
+    ;;
+  --watch)
+    run_watchdog "${2:?missing run id}" "${3:?missing worker pid}" "${4:-}"
     ;;
   *)
     echo "Unsupported mode: $MODE" >&2
