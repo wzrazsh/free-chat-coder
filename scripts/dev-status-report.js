@@ -11,7 +11,7 @@ const priorities = [
   {
     id: 'P0-3',
     title: '引入 DeepSeek Web Zero-Token Provider',
-    reason: '当前文本任务仍强依赖扩展驱动 DeepSeek 页面 DOM。应新增 Queue Server 内可直接执行的 zero-token provider，优先承接文本任务与自动进化，降低页面结构变更风险。',
+    reason: '登录态捕获与最小 HTTP transport 已补齐，但仍需在真实登录态上完成接口适配验证，并把自动进化默认切到 deepseek-web，才能真正降低文本任务对页面 DOM 的依赖。',
     files: [
       'doc/deepseek-zero-token-integration-20260417.md',
       'queue-server/providers/deepseek-web/',
@@ -25,9 +25,9 @@ const priorities = [
       '自动进化任务可优先走 deepseek-web 或在失败时明确回退到 extension-dom'
     ],
     steps: [
-      '先读 `doc/deepseek-zero-token-integration-20260417.md`，按 Phase 1 到 Phase 4 切分任务。',
-      '先做登录态捕获与诊断，再做最小 provider，不要一开始就同时改 UI 和自动进化链路。',
-      '每轮只提交一个可验证的最小单元，例如 onboard、最小 chat provider、自动进化切换、UI 可视化。'
+      '先用真实 `.browser-profile` 登录态跑一次 onboard + provider 调用，确认默认 endpoint / requestBody / headers 是否与当前 DeepSeek Web 接口匹配。',
+      '若最小 provider 可用，下一步把 `auto_evolve` 默认 provider 切到 `deepseek-web`，失败时保留 `extension-dom` 明确回退。',
+      '保持单轮只提交一个可验证的最小单元，例如 live provider 验证、auto_evolve 切换、会话/UI 可视化。'
     ]
   },
   {
@@ -189,7 +189,7 @@ async function main() {
     '- 当前阶段应定义为“稳定化 + 产品化”，而不是继续堆原型能力。',
     '- 浏览器启动场景下服务自动拉起已在 2026-04-17 完成真实验证，并已补齐可复用的端到端回归脚本。',
     '- 安装自检命令已在 2026-04-17 补齐，可直接输出扩展 ID、Native Host 安装位置、端口状态与修复建议。',
-    '- 下一阶段的首要任务应切换到“DeepSeek Web Zero-Token Provider”，把文本任务从 DOM 操控抽象为可由 Queue Server 直接调用的 provider。',
+    '- P0-3 已进入 Phase 2/3 过渡：登录态捕获与最小 DeepSeek Web HTTP transport 已补齐，下一步应做真实登录态验证并把自动进化切到 `deepseek-web`。',
     '',
     '## 最近完成',
     '',
@@ -197,6 +197,7 @@ async function main() {
     '- P0-2 已完成：新增 `test-playwright-e2e.js`，可在真实 `.browser-profile` 上验证扩展加载、Native Host 拉起、Queue `/health`、Web Console 与 offscreen WebSocket 链路。',
     '- P1-1 已完成：`validate-environment.js` 现已输出扩展 ID、Native Host manifest 位置、浏览器 / Node 模块依赖与 Queue/Web Console 端口诊断，并给出可执行修复步骤。',
     '- P1-2 已完成：自动进化链路现已具备 preflight/post-change 最小验证、失败回滚、验证审计持久化，以及 Web Console 最近审计历史展示。',
+    '- P0-3 已完成首个 Phase 2 单元：`queue-server/providers/deepseek-web/` 现已具备最小 HTTP transport、JSON/SSE 响应解析、端点回退、本机 auth snapshot 复用，以及 provider session 元数据写回任务/会话更新的基础能力；并已补齐本地 fake-server 验证。',
     '- `scripts/nightly-validate.sh` 已接入该回归测试，在具备浏览器 / Xvfb / 依赖时可自动执行。',
     '',
     '## 当前最高优先任务',
@@ -234,8 +235,9 @@ async function main() {
   lines.push('## 下一次进入会话时建议先做的事');
   lines.push('');
   lines.push('- 先读本文件、`README.md` 和 `git status --short`。');
-  lines.push('- 直接进入 P0-3：先读 `doc/deepseek-zero-token-integration-20260417.md`，从 Phase 1 的登录态捕获与诊断开始。');
+  lines.push('- 直接继续 P0-3：先读 `doc/deepseek-zero-token-integration-20260417.md`，优先做真实登录态下的 provider 验证，再推进 `auto_evolve` 切换。');
   lines.push('- 优先检查 `queue-server/providers/deepseek-web/`、`queue-server/routes/tasks.js`、`queue-server/websocket/handler.js`、`queue-server/conversations/store.js`。');
+  lines.push('- 如果真实接口与当前默认 endpoint / requestBody 不一致，先把 `queue-server/providers/deepseek-web/client.js` 的请求契约固化，再做调用链切换。');
   lines.push('- 功能改动完成后，先跑聚焦验证，再提交。');
   lines.push('');
 

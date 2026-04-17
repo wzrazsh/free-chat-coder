@@ -63,12 +63,17 @@ function extractProviderResult(providerResult) {
   return '';
 }
 
-function finishTaskUpdate(taskId, status, result, error) {
+function finishTaskUpdate(taskId, status, result, error, options = {}) {
+  const taskUpdates = options && typeof options.taskUpdates === 'object' ? options.taskUpdates : {};
+  const conversationMetadata = options && typeof options.conversationMetadata === 'object'
+    ? options.conversationMetadata
+    : null;
   const normalizedError = error ? formatTaskError(error) : null;
   const updatedTask = queueManager.updateTask(taskId, {
     status,
     result,
-    error: status === 'failed' ? normalizedError : error || null
+    error: status === 'failed' ? normalizedError : error || null,
+    ...taskUpdates
   });
 
   if (!updatedTask) {
@@ -110,7 +115,8 @@ function finishTaskUpdate(taskId, status, result, error) {
             lastTaskId: taskId,
             lastTaskStatus: status,
             lastTaskProvider: providerRegistry.getTaskProvider(updatedTask),
-            lastTaskUpdatedAt: updatedTask.updatedAt
+            lastTaskUpdatedAt: updatedTask.updatedAt,
+            ...(conversationMetadata || {})
           },
           messages
         });
@@ -165,10 +171,54 @@ async function executeServerSideTask(task) {
     const providerResult = await providerRegistry.executeTask(executionTask, {
       prompt: processedPrompt
     });
+    const taskUpdates = {};
+    const conversationMetadata = {};
+
+    if (providerResult && typeof providerResult === 'object') {
+      if (providerResult.providerSessionId) {
+        taskUpdates.providerSessionId = providerResult.providerSessionId;
+      }
+      if (providerResult.providerParentMessageId) {
+        taskUpdates.providerParentMessageId = providerResult.providerParentMessageId;
+      }
+      if (providerResult.providerMessageId) {
+        taskUpdates.providerMessageId = providerResult.providerMessageId;
+      }
+      if (providerResult.endpointPath) {
+        taskUpdates.providerEndpointPath = providerResult.endpointPath;
+      }
+      if (providerResult.requestId) {
+        taskUpdates.providerRequestId = providerResult.requestId;
+      }
+      if (providerResult.responseMode) {
+        taskUpdates.providerResponseMode = providerResult.responseMode;
+      }
+
+      if (
+        providerResult.providerSessionId
+        || providerResult.providerParentMessageId
+        || providerResult.providerMessageId
+        || providerResult.endpointPath
+      ) {
+        conversationMetadata.providerState = {
+          provider: providerId,
+          sessionId: providerResult.providerSessionId || null,
+          parentMessageId: providerResult.providerParentMessageId || null,
+          messageId: providerResult.providerMessageId || null,
+          endpointPath: providerResult.endpointPath || null,
+          requestId: providerResult.requestId || null,
+          updatedAt: new Date().toISOString()
+        };
+      }
+    }
+
     if (providerId === 'deepseek-web') {
       deepseekWebBusy = false;
     }
-    finishTaskUpdate(task.id, 'completed', extractProviderResult(providerResult), null);
+    finishTaskUpdate(task.id, 'completed', extractProviderResult(providerResult), null, {
+      taskUpdates,
+      conversationMetadata
+    });
   } catch (error) {
     if (providerId === 'deepseek-web') {
       deepseekWebBusy = false;
