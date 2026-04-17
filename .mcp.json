@@ -14,6 +14,12 @@
       "args": [
         "D:/ProgramData/npm/node_modules/oh-my-claude-sisyphus/bridge/mcp-server.cjs"
       ]
+    },
+    "claude-mem": {
+      "command": "node",
+      "args": [
+        "D:/ProgramData/npm/node_modules/claude-mem/plugin/scripts/mcp-server.cjs"
+      ]
     }
   }
 }

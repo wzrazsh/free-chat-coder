@@ -1,6 +1,7 @@
 const { parseActions } = require('./actions/action-parser');
 const actionEngine = require('./actions/action-engine');
 const systemPromptTemplate = require('./system-prompt/template');
+const conversationStore = require('./conversations/store');
 
 module.exports = {
   processTask: (task) => {
@@ -90,9 +91,20 @@ module.exports = {
       // 为简化当前流程，假设派发即成功，或直接交给扩展并在下一轮带回结果。
       if (extensionActions.length > 0 && wsClients && wsClients.extension) {
         for (const extAction of extensionActions) {
+          const requestId = `${task.id}-${extAction.action}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+          conversationStore.recordBrowserAction({
+            requestId,
+            conversationId: task.options?.conversationId || null,
+            action: extAction.action,
+            params: extAction.params,
+            status: 'pending'
+          });
+
           wsClients.extension.send(JSON.stringify({
             type: 'execute_action',
+            requestId,
             taskId: task.id,
+            conversationId: task.options?.conversationId || null,
             action: extAction.action,
             params: extAction.params
           }));

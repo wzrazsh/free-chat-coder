@@ -5,11 +5,18 @@ const customHandler = require('../custom-handler');
 const { autoEvolveManager } = require('../evolution/auto-evolve-manager');
 const { selfDiagnosis } = require('../evolution/self-diagnosis');
 const { evolutionHistory } = require('../evolution/evolution-history');
+const conversationStore = require('../conversations/store');
+
+const confirmManager = require('../actions/confirm-manager');
 
 // Keep track of connected extension clients
 let extensionClients = new Set();
 // Keep track of web console clients
 let webClients = new Set();
+
+// 注入 webClients 引用到 confirmManager，让它能推送审批请求到前端
+confirmManager.setWebClients(webClients);
+confirmManager.setEventBroadcaster(broadcastRealtimeEvent);
 
 function setupWebSocket(server) {
   const wss = new WebSocket.Server({ server });
@@ -58,15 +65,27 @@ function setupWebSocket(server) {
             
             customHandler.processResult(task, result, wsClients).then(processRes => {
               if (processRes.status === 'processing') {
-                // 还有下一轮，继续发送 prompt
-                queueManager.updateTask(taskId, { status: 'processing' });
-                
+                const nextRoundTask = queueManager.updateTask(taskId, {
+                  status: 'processing',
+                  prompt: processRes.nextPrompt,
+                  round: task.round
+                });
+
                 // 将下一轮反馈发给扩展
-                if (wsClients.extension && wsClients.extension.readyState === WebSocket.OPEN) {
+                if (wsClients.extension && wsClients.extension.readyState === WebSocket.OPEN && nextRoundTask) {
                   wsClients.extension.send(JSON.stringify({
                     type: 'task_assigned',
-                    task: { ...task, prompt: processRes.nextPrompt }
+                    task: nextRoundTask
                   }));
+                } else {
+                  const requeuedTask = queueManager.requeueTask(taskId, {
+                    prompt: processRes.nextPrompt,
+                    round: task.round
+                  });
+
+                  if (requeuedTask) {
+                    console.warn(`[WS] Re-queued task ${taskId} because no extension was available for round ${task.round}`);
+                  }
                 }
                 
                 broadcastToWeb({
@@ -86,9 +105,38 @@ function setupWebSocket(server) {
         }
         
         // 处理扩展动作执行的回调 (比如 new_session, screenshot)
-        else if (data.type === 'action_result') {
-          // TODO: 将来支持更复杂的扩展内动作反馈
-          console.log(`[WS] Extension action result received for task ${data.taskId}`);
+        else if (data.type === 'action_result' || data.type === 'browser_action_result') {
+          console.log(`[WS] Extension action result received for request ${data.requestId || 'unknown'}`);
+
+          if (data.requestId) {
+            conversationStore.completeBrowserAction({
+              requestId: data.requestId,
+              status: data.success === false ? 'failed' : 'completed',
+              result: data.result || data.response || null,
+              error: data.error || null
+            });
+          }
+
+          if (data.conversationId && data.syncPayload) {
+            try {
+              const syncResult = conversationStore.syncConversation(data.conversationId, data.syncPayload);
+              broadcastToWeb({
+                type: 'conversation_updated',
+                conversation: syncResult.conversation
+              });
+            } catch (syncError) {
+              console.error('[WS] Failed to sync conversation from browser action result:', syncError);
+            }
+          }
+
+          broadcastToWeb({
+            type: 'browser_action_result',
+            requestId: data.requestId,
+            conversationId: data.conversationId,
+            success: data.success !== false,
+            result: data.result || data.response || null,
+            error: data.error || null
+          });
         }
         
         // 处理扩展自动发起的进化请求
@@ -180,6 +228,67 @@ function setupWebSocket(server) {
     function finishTaskUpdate(taskId, status, result, error) {
       const updatedTask = queueManager.updateTask(taskId, { status, result, error });
       if (updatedTask) {
+        if (updatedTask.options?.conversationId) {
+          try {
+            const messages = [];
+            if (status === 'completed' && result) {
+              messages.push({
+                role: 'assistant',
+                content: result,
+                source: 'task_result',
+                metadata: {
+                  taskId,
+                  status
+                }
+              });
+            }
+
+            if (status === 'failed' && error) {
+              messages.push({
+                role: 'system',
+                content: error,
+                source: 'task_error',
+                metadata: {
+                  taskId,
+                  status
+                }
+              });
+            }
+
+            if (messages.length > 0) {
+              const syncResult = conversationStore.syncConversation(updatedTask.options.conversationId, {
+                metadata: {
+                  lastTaskId: taskId,
+                  lastTaskStatus: status,
+                  lastTaskUpdatedAt: updatedTask.updatedAt
+                },
+                messages
+              });
+
+              broadcastToWeb({
+                type: 'conversation_updated',
+                conversation: syncResult.conversation
+              });
+            }
+          } catch (conversationError) {
+            console.error('[WS] Failed to persist task update into conversation:', conversationError);
+          }
+        }
+
+        const evolutionRequest = updatedTask?.options?.autoEvolve === true
+          ? updatedTask.options.evolutionRequest
+          : null;
+        if (evolutionRequest?.id && (status === 'completed' || status === 'failed')) {
+          evolutionHistory.updateEvolutionResult(evolutionRequest.id, {
+            success: status === 'completed',
+            result,
+            error,
+            duration: updatedTask.createdAt
+              ? (Date.now() - new Date(updatedTask.createdAt).getTime())
+              : undefined
+          });
+        }
+
         // Broadcast update to web clients
         broadcastToWeb({
           type: 'task_update',
@@ -197,6 +306,15 @@ function setupWebSocket(server) {
       console.log(`[WS] Client disconnected (${clientType})`);
       if (clientType === 'extension') {
         extensionClients.delete(ws);
+        if (extensionClients.size === 0) {
+          const requeuedTasks = queueManager.requeueProcessingTasks();
+          for (const requeuedTask of requeuedTasks) {
+            broadcastToWeb({
+              type: 'task_update',
+              task: requeuedTask
+            });
+          }
+        }
       } else if (clientType === 'web') {
         webClients.delete(ws);
       }
@@ -262,6 +380,11 @@ function broadcastToExtensions(message) {
       client.send(msgStr);
     }
   }
+}
+
+function broadcastRealtimeEvent(message) {
+  broadcastToWeb(message);
+  broadcastToExtensions(message);
 }
 
 // Expose trigger to check queue when new tasks arrive

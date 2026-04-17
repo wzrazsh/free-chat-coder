@@ -13,3 +13,11 @@ extensions_snapshot
 service_worker_check
 generate_pdf.py
 .github
+queue-server/data/chat-state.db
+queue-server/data/chat-state.db-shm
+queue-server/data/chat-state.db-wal
+CODEBUDDY.md
+.playwright-mcp-config.json
+.mcp.json
+.browser-profile-webconsole
+opencode.json

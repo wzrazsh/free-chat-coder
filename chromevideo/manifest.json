@@ -1,21 +1,26 @@
 {
   "manifest_version": 3,
   "name": "DeepSeek Agent Bridge",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "permissions": [
     "offscreen",
     "storage",
     "scripting",
+    "tabs",
+    "activeTab",
     "webNavigation",
-    "nativeMessaging"
+    "nativeMessaging",
+    "sidePanel"
   ],
   "action": {
-    "default_popup": "popup.html",
-    "default_title": "Control Servers"
+    "default_title": "SOLO Coder"
+  },
+  "side_panel": {
+    "default_path": "sidepanel.html"
   },
   "host_permissions": [
     "https://chat.deepseek.com/*",
-    "http://localhost:8080/*"
+    "http://localhost:8082/*"
   ],
   "background": {
     "service_worker": "background.js"
@@ -23,7 +28,20 @@
   "content_scripts": [
     {
       "matches": ["https://chat.deepseek.com/*"],
-      "js": ["content.js"],
+      "js": [
+        "utils/dom-helpers.js",
+        "utils/anti-detection.js",
+        "readers/page-state-reader.js",
+        "readers/model-reader.js",
+        "readers/session-reader.js",
+        "readers/chat-reader.js",
+        "controllers/mode-controller.js",
+        "controllers/upload-controller.js",
+        "controllers/screenshot-controller.js",
+        "controllers/session-controller.js",
+        "controllers/prompt-controller.js",
+        "content.js"
+      ],
       "run_at": "document_idle"
     }
   ]

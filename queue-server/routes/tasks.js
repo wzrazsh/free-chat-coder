@@ -3,6 +3,7 @@ const express = require('express');
 const router = express.Router();
 const queueManager = require('../queue/manager');
 const wsHandler = require('../websocket/handler');
+const conversationStore = require('../conversations/store');
 
 // Get all tasks
 router.get('/', (req, res) => {
@@ -20,6 +21,30 @@ router.post('/', (req, res) => {
   }
 
   const task = queueManager.addTask(prompt, options);
+
+  if (task.options?.conversationId) {
+    try {
+      conversationStore.syncConversation(task.options.conversationId, {
+        metadata: {
+          lastTaskId: task.id,
+          lastTaskCreatedAt: task.createdAt
+        },
+        messages: [
+          {
+            role: 'user',
+            content: prompt,
+            source: 'task_prompt',
+            metadata: {
+              taskId: task.id,
+              attachments: task.options?.attachments || []
+            }
+          }
+        ]
+      });
+    } catch (error) {
+      console.warn('[TasksRoute] Failed to append prompt to conversation:', error.message);
+    }
+  }
   
   // Try to assign to extension if connected
   wsHandler.triggerAssign();
@@ -30,7 +55,7 @@ router.post('/', (req, res) => {
     task
   });
 
-  res.status(201).json({ id: task.id, status: task.status });
+  res.status(201).json({ id: task.id, status: task.status, task });
 });
 
 // Update task status (for REST fallback)
@@ -54,6 +79,52 @@ router.patch('/:id', (req, res) => {
   }
 
   res.json({ success: true, task: updatedTask });
+});
+
+// ──────────────────────────────────────────────
+// 人工审批接口（配合 confirm-manager.js）
+// ──────────────────────────────────────────────
+const confirmManager = require('../actions/confirm-manager');
+
+// 获取待审批列表
+router.get('/confirms', (req, res) => {
+  res.json({ confirms: confirmManager.getPendingList() });
+});
+
+// 创建一个仅用于本地联调/验证的合成审批项
+router.post('/confirms/test', (req, res) => {
+  const { action, riskLevel, params, taskId } = req.body || {};
+  const confirmId = confirmManager.createTestConfirm({
+    action: action || 'execute_command',
+    riskLevel: riskLevel || 'high',
+    params: params || { command: 'whoami', cwd: '.' },
+    taskId: taskId || `synthetic-${Date.now()}`
+  });
+
+  res.status(201).json({ success: true, confirmId });
+});
+
+// 响应审批（approved: true/false）
+router.post('/confirms/:id', (req, res) => {
+  const { id } = req.params;
+  const { approved } = req.body;
+  const found = confirmManager.respondConfirm(id, !!approved);
+  if (!found) {
+    return res.status(404).json({ error: 'Confirm not found or already resolved' });
+  }
+
+  wsHandler.broadcastToWeb({
+    type: 'confirm_resolved',
+    confirmId: id,
+    approved: !!approved
+  });
+  wsHandler.broadcastToExtensions({
+    type: 'confirm_resolved',
+    confirmId: id,
+    approved: !!approved
+  });
+
+  res.json({ success: true, approved: !!approved });
 });
 
 module.exports = router;

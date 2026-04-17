@@ -72,7 +72,10 @@ class ActionEngine {
     // 如果需要确认，先走确认流程
     if (definition.requireConfirm) {
       const approved = await new Promise(resolve => {
-        confirmManager.requestConfirm({ taskId: task.id, action, params, riskLevel: definition.riskLevel }, resolve);
+        confirmManager.requestConfirm(
+          { taskId: task.id, action, params, riskLevel: definition.riskLevel, task },
+          resolve
+        );
       });
 
       if (!approved) {

@@ -66,6 +66,10 @@ class EvolutionHistory {
     console.log('[EvolutionHistory] 历史管理器已初始化，加载了', this.history.length, '条记录');
   }
 
+  isFinalStatus(status) {
+    return status === 'completed' || status === 'failed';
+  }
+
   /**
    * 确保数据目录存在
    */
@@ -100,6 +104,9 @@ class EvolutionHistory {
           this.stats = parsed.stats || this.stats;
           this.lastAnalysis = parsed.lastAnalysis || null;
           this.trends = parsed.trends || {};
+          // 使用当前逻辑重算，避免历史统计口径漂移
+          this.recalculateStats();
+          this.updateAnalysis();
 
           console.log(`[EvolutionHistory] 从 ${historyPath} 加载了 ${this.history.length} 条记录`);
         }
@@ -252,6 +259,7 @@ class EvolutionHistory {
 
     // 触发分析更新
     this.updateAnalysis();
+    this.saveHistory();
 
     console.log(`[EvolutionHistory] 记录进化操作: ${record.id} (${record.errorType})`);
     return record.id;
@@ -273,22 +281,31 @@ class EvolutionHistory {
     record.result = result.result || null;
     record.error = result.error || null;
     record.completedAt = new Date().toISOString();
-    record.duration = result.duration || (Date.now() - record.timestamp);
+    const recordStart = typeof record.timestamp === 'number'
+      ? record.timestamp
+      : new Date(record.timestamp).getTime();
+    record.duration = result.duration || (Date.now() - recordStart);
 
-    // 更新统计
-    this.updateStats(record);
+    // 结果更新属于状态迁移，重算统计避免重复累计
+    this.recalculateStats();
 
     // 触发分析更新
     this.updateAnalysis();
+    this.saveHistory();
 
     console.log(`[EvolutionHistory] 更新进化结果: ${recordId} -> ${record.status}`);
     return true;
   }
 
+
   /**
    * 更新统计信息
    */
   updateStats(record) {
+    if (!this.isFinalStatus(record.status)) {
+      return;
+    }
+
     // 总计数
     this.stats.totalEvolutions++;
 

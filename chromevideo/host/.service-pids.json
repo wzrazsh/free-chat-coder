@@ -1,0 +1,12 @@
+{
+  "SOLOCoder-QueueServer": {
+    "pid": 45560,
+    "port": 8082,
+    "startedAt": "2026-04-17T08:25:44.828Z"
+  },
+  "SOLOCoder-WebConsole": {
+    "pid": 39052,
+    "port": 5173,
+    "startedAt": "2026-04-17T08:25:45.056Z"
+  }
+}

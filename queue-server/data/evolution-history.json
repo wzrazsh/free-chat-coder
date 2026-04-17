@@ -1,6 +1,6 @@
 {
   "version": "1.0",
-  "lastUpdated": "2026-04-13T06:21:41.490Z",
+  "lastUpdated": "2026-04-17T09:00:45.994Z",
   "history": [],
   "stats": {
     "totalEvolutions": 0,
@@ -11,8 +11,20 @@
     "byDay": {},
     "byHour": {}
   },
-  "lastAnalysis": null,
-  "trends": {},
+  "lastAnalysis": {
+    "timestamp": 1776414345970,
+    "windowSize": 0,
+    "trends": {
+      "successRate": null,
+      "errorTypeDistribution": {},
+      "efficiency": null
+    }
+  },
+  "trends": {
+    "successRate": null,
+    "errorTypeDistribution": {},
+    "efficiency": null
+  },
   "config": {
     "storage": {
       "dataDir": "E:\\workspace\\free-chat-coder\\queue-server\\data",

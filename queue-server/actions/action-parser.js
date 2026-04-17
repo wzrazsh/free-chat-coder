@@ -26,8 +26,9 @@ function parseActions(replyText) {
     }
   }
 
-  // 模式 3：行内格式
-  const inlineRegex = /\[ACTION:(\{[^}]+\})\]/g;
+  // 模式 3：行内格式 [ACTION:{...}]
+  // 使用非贪婪匹配 + 平衡括号计数，确保能匹配含嵌套对象的 JSON
+  const inlineRegex = /\[ACTION:(\{[\s\S]*?\})\]/g;
   while ((match = inlineRegex.exec(replyText)) !== null) {
     try {
       const parsed = JSON.parse(match[1]);

@@ -29,6 +29,10 @@ window.PageStateReader = {
         isGenerating,
         isInputReady,
         currentUrl: window.location.href,
+        currentSessionId: (() => {
+          const match = window.location.pathname.match(/\/a\/chat\/s\/([^/?#]+)/);
+          return match ? match[1] : null;
+        })(),
         isLoggedIn,
         hasError,
         errorMessage

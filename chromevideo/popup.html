@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <style>
-    body { width: 280px; padding: 10px; font-family: system-ui, -apple-system, sans-serif; }
+    body { width: 320px; padding: 10px; font-family: system-ui, -apple-system, sans-serif; }
     h3 { margin-top: 0; font-size: 16px; color: #333; }
     .server-group { margin-bottom: 15px; border: 1px solid #e5e7eb; padding: 12px; border-radius: 6px; background-color: #f9fafb; }
     .server-group h4 { margin: 0 0 10px; font-size: 14px; color: #374151; }
@@ -12,17 +12,30 @@
     .btn-start { background-color: #10a37f; color: white; }
     .btn-stop { background-color: #ef4444; color: white; }
     .btn-link { background-color: #3b82f6; color: white; }
+    .btn-evolve { background-color: #8b5cf6; color: white; }
     .status-container { display: flex; align-items: center; margin-top: 10px; font-size: 12px; color: #6b7280; }
     .status-dot { width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; background-color: #9ca3af; }
     .status-dot.running { background-color: #10a37f; box-shadow: 0 0 4px #10a37f; }
     .status-dot.stopped { background-color: #ef4444; }
     .error-msg { color: #ef4444; font-size: 12px; margin-top: 10px; word-break: break-all; }
     .setup-hint { font-size: 12px; color: #6b7280; margin-top: 10px; padding: 8px; background: #fffbeb; border: 1px solid #fef3c7; border-radius: 4px; }
+
+    /* 自动进化面板样式 */
+    .evolve-group { margin-bottom: 15px; border: 1px solid #c4b5fd; padding: 12px; border-radius: 6px; background-color: #faf5ff; }
+    .evolve-group h4 { margin: 0 0 10px; font-size: 14px; color: #7c3aed; }
+    .evolve-textarea { width: 100%; min-height: 60px; padding: 8px; border: 1px solid #d8b4fe; border-radius: 4px; font-size: 12px; resize: vertical; box-sizing: border-box; }
+    .evolve-textarea:focus { outline: none; border-color: #8b5cf6; box-shadow: 0 0 0 2px rgba(139, 92, 246, 0.2); }
+    .evolve-status { display: flex; align-items: center; margin-top: 8px; font-size: 11px; color: #6b7280; }
+    .evolve-status.active { color: #10a37f; }
+    .evolve-info { font-size: 11px; color: #9ca3af; margin-top: 6px; }
+    .evolve-session { display: flex; align-items: center; gap: 6px; margin-top: 8px; }
+    .session-badge { background: #8b5cf6; color: white; padding: 2px 8px; border-radius: 10px; font-size: 10px; }
+    .btn-resume { background-color: #f59e0b; color: white; }
   </style>
 </head>
 <body>
   <h3>🚀 SOLO Coder Servers</h3>
-  
+
   <div class="server-group">
     <h4>Queue Server (Port 8080)</h4>
     <button class="btn btn-start" id="start-queue">Start</button>
@@ -47,6 +60,33 @@
   <div class="server-group">
     <h4>DeepSeek Agent</h4>
     <button class="btn btn-link" id="link-deepseek">Open DeepSeek Chat</button>
+    <button class="btn btn-start" id="test-error" style="background-color: #f59e0b; margin-top: 10px;">模拟DOM错误</button>
+  </div>
+
+  <!-- 自动进化面板 -->
+  <div class="evolve-group">
+    <h4>🔮 自动进化</h4>
+
+    <textarea id="evolve-direction" class="evolve-textarea" placeholder="输入进化方向，例如：优化 WebSocket 重连逻辑、增强错误处理机制..."></textarea>
+
+    <div class="evolve-session" id="evolve-session" style="display: none;">
+      <span class="session-badge" id="session-badge">会话</span>
+      <span id="session-info" style="font-size: 11px; color: #6b7280;"></span>
+    </div>
+
+    <div style="margin-top: 10px;">
+      <button class="btn btn-evolve" id="start-evolve">▶ 开始进化</button>
+      <button class="btn btn-stop" id="stop-evolve" style="display: none;">■ 停止</button>
+      <button class="btn btn-link" id="link-evolve-tab" style="display: none;">📱 查看对话</button>
+    </div>
+
+    <div class="evolve-status" id="evolve-status">
+      <span id="evolve-status-text">点击"开始进化"启动主动进化模式</span>
+    </div>
+
+    <div class="evolve-info" id="evolve-info">
+      开启后，系统将持续监控 DeepSeek 对话，提取进化指令并自动优化扩展和服务。重启浏览器后可继续当前进度。
+    </div>
   </div>
 
   <div id="error" class="error-msg"></div>

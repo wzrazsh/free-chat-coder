@@ -76,6 +76,41 @@ class QueueManager {
     return updatedTask;
   }
 
+  requeueTask(id, updates = {}) {
+    if (!this.tasks.has(id)) {
+      return null;
+    }
+
+    const updatedTask = this.updateTask(id, {
+      ...updates,
+      status: 'pending'
+    });
+
+    if (updatedTask && !this.pendingQueue.includes(id)) {
+      this.pendingQueue.push(id);
+      this._saveTasks();
+    }
+
+    return updatedTask;
+  }
+
+  requeueProcessingTasks() {
+    const requeuedTasks = [];
+
+    for (const task of this.tasks.values()) {
+      if (task.status !== 'processing') {
+        continue;
+      }
+
+      const requeuedTask = this.requeueTask(task.id);
+      if (requeuedTask) {
+        requeuedTasks.push(requeuedTask);
+      }
+    }
+
+    return requeuedTasks;
+  }
+
   getTask(id) {
     return this.tasks.get(id);
   }

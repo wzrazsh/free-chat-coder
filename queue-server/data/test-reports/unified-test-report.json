@@ -1,0 +1,118 @@
+{
+  "results": [
+    {
+      "suiteId": "US-001",
+      "suiteName": "错误检测验证",
+      "status": "passed",
+      "duration": 92,
+      "timestamp": "2026-04-13T15:37:07.115Z",
+      "priority": "P0",
+      "details": {
+        "exitCode": 0,
+        "stdout": "=== US-001 错误检测验证 ===\n\n[AutoEvolveMonitor] 监控器已初始化\n[AutoEvolveMonitor] 模块加载完成\n✅ auto-evolve-monitor模块加载成功\n监控配置: {\n  '错误类型': 10,\n  '白名单错误类型': 9,\n  '错误阈值': {\n    websocket_connection_error: 2,\n    websocket_message_error: 2,\n    dom_selector_not_found: 3,\n    content_script_injection_failed: 2,\n    task_execution_failed: 2,\n    task_execution_timeout: 1,\n    api_response_error: 3,\n    extension_permission_error: 1,\n    page_load_timeout: 2,\n    element_interaction_failed: 3,\n    default: 3\n  },\n  '进化限制': { maxPerDay: 5, coolingPeriod: 3600000, minInterval: 300000 }\n}\n\n1. 重置监控器...\n[AutoEvolveMonitor] 监控器已重置\n\n2. 记录WebSocket连接错误...\n[AutoEvolveMonitor] 记录错误: websocket_connection_error, 计数: 1\nWebSocket连接错误计数: 1\n✅ 错误记录成功\n\n3. 测试错误阈值检测...\n阈值: 2 次错误\n[AutoEvolveMonitor] 记录错误: websocket_connection_error, 计数: 2\n[AutoEvolveMonitor] 触发自动进化: websocket_connection_error (计数: 2, 阈值: 2)\n[AutoEvolveMonitor] 发送自动进化请求: {\n  type: 'auto_evolve',\n  errorType: 'websocket_connection_error',\n  errorMessage: 'Test error 1',\n  location: 'ws://localhost:8082',\n  currentCode: 'ws://localhost:8082',\n  timestamp: '2026-04-13T15:37:07.104Z',\n  errorCount: 2,\n  details: {\n    error: 'Test error 1',\n    url: 'ws://localhost:8082',\n    timestamp: '2026-04-13T15:37:07.103Z',\n    response: undefined\n  }\n}\n[Mock Chrome] 发送消息: auto_evolve\n注入第 2/2 个错误\n最终错误计数: 2\n✅ 错误计数达到阈值: 2 >= 2\n\n4. 测试冷却期机制...\n[AutoEvolveMonitor] 监控器已重置\n[AutoEvolveMonitor] 记录错误: websocket_connection_error, 计数: 1\n[AutoEvolveMonitor] 记录错误: websocket_connection_error, 计数: 2\n[AutoEvolveMonitor] 触发自动进化: websocket_connection_error (计数: 2, 阈值: 2)\n[AutoEvolveMonitor] 发送自动进化请求: {\n  type: 'auto_evolve',\n  errorType: 'websocket_connection_error',\n  errorMessage: 'Cooling test error 1',\n  location: 'ws://localhost:8082',\n  currentCode: 'ws://localhost:8082',\n  timestamp: '2026-04-13T15:37:07.104Z',\n  errorCount: 2,\n  details: {\n    error: 'Cooling test error 1',\n    url: 'ws://localhost:8082',\n    timestamp: '2026-04-13T15:37:07.104Z',\n    response: undefined\n  }\n}\n[Mock Chrome] 发送消息: auto_evolve\n冷却期配置: { coolingPeriod: 3600000, minInterval: 300000 }\n✅ 冷却期配置存在\n\n5. 测试频率限制...\n每日最大进化次数: 5\n最小进化间隔: 300000\n✅ 频率限制配置合理\n\n6. 检查自动进化白名单...\n白名单包含 9 种错误类型\n✅ 所有关键错误类型都在白名单中\n\n=== 测试结果汇总 ===\n✅ auto-evolve-monitor模块功能正常\n✅ 错误记录和计数工作正常\n✅ 错误阈值配置正确\n✅ 冷却期和频率限制配置存在\n✅ 自动进化白名单配置合理\n\n✅ US-001 错误检测验证通过\n\n注意: 这是一个基本功能验证。完整验证需要在Chrome扩展环境中进行，\n      包括实际的WebSocket错误触发和auto_evolve消息发送。\n",
+        "stderr": ""
+      }
+    },
+    {
+      "suiteId": "US-002",
+      "suiteName": "WebSocket消息流转",
+      "status": "failed",
+      "duration": 5103,
+      "timestamp": "2026-04-13T15:37:12.274Z",
+      "priority": "P0",
+      "details": {
+        "exitCode": 1,
+        "stdout": "=== US-002 消息流转测试 ===\n\n开始消息流转测试...\n\n1. 连接到WebSocket服务器: ws://localhost:8080\n✅ WebSocket连接成功\n2. 注册为extension客户端...\n✅ 已发送注册消息\n3. 发送auto_evolve测试消息...\n消息内容: {\n  \"type\": \"auto_evolve\",\n  \"errorType\": \"dom_selector_not_found\",\n  \"errorMessage\": \"DOM selector \\\".video-item\\\" not found\",\n  \"location\": \"https://example.com/videos\",\n  \"currentCode\": \"document.querySelector(\\\".video-item\\\")\",\n  \"timestamp\": \"2026-04-13T15:37:07.252Z\",\n  \"details\": {\n    \"selector\": \".video-item\",\n    \"url\": \"https://example.com/videos\",\n    \"context\": \"video list extraction\"\n  }\n}\n✅ 测试消息已发送\n\n调试建议:\n1. 确保Queue-Server正在运行 (端口 8080)\n2. 检查WebSocket handler是否正确配置\n3. 验证auto_evolve消息处理逻辑\n4. 查看服务器日志获取详细信息\n",
+        "stderr": "\n❌ 消息流转测试失败: WebSocket连接超时 (5000ms)\n\n❌ US-002 消息流转验证失败\n"
+      }
+    },
+    {
+      "suiteId": "US-003",
+      "suiteName": "AI修复生成",
+      "status": "passed",
+      "duration": 673,
+      "timestamp": "2026-04-13T15:37:12.950Z",
+      "priority": "P0",
+      "details": {
+        "exitCode": 0,
+        "stdout": "=== US-003 AI修复生成验证 ===\n\n🔄 已清除模块缓存，重新加载最新代码\n[AutoEvolveManager] 策略管理器已初始化\n[SelfDiagnosis] 诊断分析器已初始化\n[EvolutionHistory] 从 E:\\workspace\\free-chat-coder\\queue-server\\data\\evolution-history.json 加载了 6 条记录\n[EvolutionHistory] 历史管理器已初始化，加载了 6 条记录\n🔍 getEvolutionPriority 函数源码前300字符: function getEvolutionPriority(errorType) {\r\n  const priorityMap = {\r\n    websocket_connection_error: 0,  // 最高优先级：连接问题\r\n    websocket_message_error: 1,     // 高优先级：消息处理问题\r\n    dom_selector_not_found: 1,       // 高优先级：功能失效\r\n    task_execution_failed: 1,        // 高优先级：任务失败\r\n    content_script_injecti\n🔍 函数是否包含websocket_connection_error: 0? true\n✅ 模块加载成功\n开始AI修复生成验证...\n\n\n1. 测试generateEvolutionPrompt函数...\n\n测试错误类型: dom_selector_not_found\n[SelfDiagnosis] 分析错误: dom_selector_not_found\n[SelfDiagnosis] 诊断报告生成完成: diagnosis-1776094632387-gxe72\n✅ 提示生成成功，长度: 221 字符\n   ✅ 包含预期内容: \"[自动进化]\"\n   ✅ 包含预期内容: \"DOM选择器失效\"\n   ✅ 包含预期内容: \"请分析原因并使用evolve_extension修复\"\n   内容验证: 3/3 项通过\n   ✅ 诊断报告已生成并可用\n   ✅ 进化建议已生成并可用\n\n测试错误类型: websocket_connection_error\n[SelfDiagnosis] 分析错误: websocket_connection_error\n[SelfDiagnosis] 诊断报告生成完成: diagnosis-1776094632388-4nvtt\n✅ 提示生成成功，长度: 221 字符\n   ✅ 包含预期内容: \"[自动进化]\"\n   ✅ 包含预期内容: \"WebSocket连接失败\"\n   ✅ 包含预期内容: \"请分析原因并使用evolve_extension或evolve_handler修复\"\n   内容验证: 3/3 项通过\n   ✅ 诊断报告已生成并可用\n   ✅ 进化建议已生成并可用\n\n测试错误类型: task_execution_timeout\n[SelfDiagnosis] 分析错误: task_execution_timeout\n[SelfDiagnosis] 诊断报告生成完成: diagnosis-1776094632388-eqrgg\n✅ 提示生成成功，长度: 196 字符\n   ✅ 包含预期内容: \"[自动进化]\"\n   ✅ 包含预期内容: \"任务执行超时\"\n   ✅ 包含预期内容: \"请优化执行逻辑并使用合适的进化动作修复\"\n   内容验证: 3/3 项通过\n   ✅ 诊断报告已生成并可用\n   ✅ 进化建议已生成并可用\n\n✅ generateEvolutionPrompt测试通过\n\n2. 测试self-diagnosis模块...\n\n测试错误类型: dom_selector_not_found\n[SelfDiagnosis] 分析错误: dom_selector_not_found\n[SelfDiagnosis] 诊断报告生成完成: diagnosis-1776094632388-wb6ie\n   ✅ 诊断报告包含所有必需字段\n   ✅ 根因分析: 选择器语法错误\n   ✅ 严重程度评估: high\n   ✅ 修复建议: 5 项立即行动, 4 项短期修复\n\n测试错误类型: websocket_connection_error\n[SelfDiagnosis] 分析错误: websocket_connection_error\n[SelfDiagnosis] 诊断报告生成完成: diagnosis-1776094632389-llh5h\n   ✅ 诊断报告包含所有必需字段\n   ✅ 根因分析: 本地服务器未启动\n   ✅ 严重程度评估: critical\n   ✅ 修复建议: 4 项立即行动, 3 项短期修复\n\n测试错误类型: task_execution_timeout\n[SelfDiagnosis] 分析错误: task_execution_timeout\n[SelfDiagnosis] 诊断报告生成完成: diagnosis-1776094632389-q3f3q\n   ✅ 诊断报告包含所有必需字段\n   ✅ 根因分析: 性能瓶颈\n   ✅ 严重程度评估: medium\n   ✅ 修复建议: 3 项立即行动, 3 项短期修复\n\n✅ self-diagnosis模块测试通过\n\n3. 测试任务优先级设置...\n\n   [调试] getEvolutionPriority 函数类型: function\n   [调试] 测试websocket_connection_error优先级...\n   [调试] 输入errorType: \"websocket_connection_error\", 返回优先级: 0\n   [调试] 检查priorityMap: websocket_connection_error 应该映射到 0\n   ✅ websocket_connection_error: 优先级 0 (期望: 0)\n   ✅ websocket_message_error: 优先级 1 (期望: 1)\n   ✅ dom_selector_not_found: 优先级 1 (期望: 1)\n   ✅ task_execution_failed: 优先级 1 (期望: 1)\n   ✅ content_script_injection_failed: 优先级 2 (期望: 2)\n   ✅ extension_permission_error: 优先级 2 (期望: 2)\n   ✅ task_execution_timeout: 优先级 3 (期望: 3)\n   ✅ page_load_timeout: 优先级 3 (期望: 3)\n   ✅ element_interaction_failed: 优先级 3 (期望: 3)\n   ✅ api_response_error: 优先级 4 (期望: 4)\n   ✅ unknown_error_type: 优先级 5 (期望: 5)\n   ✅ 优先级设置合理: websocket_connection_error(0) > api_response_error(4)\n   ✅ 优先级设置合理: websocket_connection_error(0) > task_execution_timeout(3)\n   ✅ 优先级设置合理: dom_selector_not_found(1) > api_response_error(4)\n   ✅ 优先级设置合理: dom_selector_not_found(1) > task_execution_timeout(3)\n✅ 任务优先级设置测试通过\n\n进行WebSocket集成验证...\n\n4. 测试WebSocket集成验证...\n\n   ✅ WebSocket连接成功\n   ✅ DOM选择器错误消息已发送\n   ✅ WebSocket连接错误消息已发送\n   ✅ WebSocket测试完成\n✅ WebSocket集成验证完成\n\n=== AI修复生成验证结果汇总 ===\n1. generateEvolutionPrompt函数: ✅ 通过\n2. self-diagnosis模块: ✅ 通过\n3. 任务优先级设置: ✅ 通过\n4. WebSocket集成验证: ✅ 完成\n\n=== 验收标准验证 ===\n1. ✅ 发送DOM选择器错误时，生成的prompt包含选择器更新建议\n2. ✅ 发送WebSocket连接错误时，生成的prompt包含连接逻辑优化建议\n3. ✅ 诊断报告模块正确集成，生成结构化问题报告\n4. ✅ 任务优先级根据错误严重性正确设置（高优先级错误获得更高优先级）\n5. ✅ 不同错误类型的智能提示生成成功\n\n✅ US-003 AI修复生成验证通过\n\n✅ US-003 AI修复生成验证通过\n",
+        "stderr": ""
+      }
+    },
+    {
+      "suiteId": "US-004",
+      "suiteName": "自动批准",
+      "status": "passed",
+      "duration": 77,
+      "timestamp": "2026-04-13T15:37:13.027Z",
+      "priority": "P0",
+      "details": {
+        "exitCode": 0,
+        "stdout": "=== US-004 自动批准验证 ===\n\n✅ confirm-manager模块加载成功\n开始自动批准验证...\n\n\n1. 验证shouldAutoApprove方法...\n\n测试: 自动进化任务（evolve_extension，autoEvolve=true）\n   描述: 标记为autoEvolve的任务应该在白名单内被自动批准\n   ✅ 通过: 自动批准 (预期: 自动批准)\n测试: 自动进化任务（evolve_handler，autoEvolve=true）\n   描述: evolve_handler动作应该被自动批准\n   ✅ 通过: 自动批准 (预期: 自动批准)\n测试: 自动进化任务（evolve_server，autoEvolve=true）\n   描述: evolve_server动作应该被自动批准\n   ✅ 通过: 自动批准 (预期: 自动批准)\n测试: 自动进化任务（prompt包含标识，autoEvolve未设置）\n   描述: prompt包含自动进化标识的任务应该被自动批准\n   ✅ 通过: 自动批准 (预期: 自动批准)\n测试: 自动进化任务（options.autoEvolve=true）\n   描述: options.autoEvolve=true的任务应该被自动批准\n   ✅ 通过: 自动批准 (预期: 自动批准)\n测试: 非自动进化任务（evolve_extension，autoEvolve=false）\n   描述: autoEvolve=false的任务不应该被自动批准\n   ✅ 通过: 需要确认 (预期: 需要确认)\n测试: 非自动进化任务（evolve_extension，无autoEvolve标记）\n   描述: 没有autoEvolve标记的任务不应该被自动批准\n   ✅ 通过: 需要确认 (预期: 需要确认)\n测试: 非进化动作（非白名单动作）\n   描述: 非进化动作（不在白名单内）不应该被自动批准，即使autoEvolve=true\n   ✅ 通过: 需要确认 (预期: 需要确认)\n测试: 无任务信息的动作\n   描述: 没有任务信息的动作不应该被自动批准\n   ✅ 通过: 需要确认 (预期: 需要确认)\n\n结果: 9 通过, 0 失败\n✅ shouldAutoApprove测试通过\n\n2. 验证requestConfirm实际行为...\n\n测试: 自动进化任务（evolve_extension，autoEvolve=true）\n[ConfirmManager] Auto-approving evolution action: evolve_extension (auto-evolve task)\n   ✅ 通过: 符合预期: 自动批准\n      响应时间: 0ms\n\n结果: 1 通过, 0 失败\n✅ requestConfirm行为测试通过\n\n3. 验证进化动作白名单...\n\n白名单内容: [\"evolve_handler\",\"evolve_extension\",\"evolve_server\"]\n✅ 白名单包含所有预期的进化动作，无多余动作\n✅ 进化动作白名单测试通过\n\n4. 验证超时拒绝机制...\n\n注意: 此测试需要等待部分超时，可能需要较长时间\n配置超时时间: 180000ms (3分钟)\n测试将使用缩短的超时时间进行验证...\n验证超时机制配置...\n✅ requestConfirm方法包含超时机制 (180000ms = 3分钟)\n✅ 超时拒绝日志消息存在\n⚠️ 完整超时测试需要3分钟，跳过实际等待\n✅ 超时拒绝机制测试通过\n\n5. 验证环境变量配置...\n\n测试 AUTO_CONFIRM=false (默认)\n✅ 代码检查AUTO_CONFIRM环境变量\n测试 AUTO_CONFIRM=true\n✅ 代码正确检查AUTO_CONFIRM === \"true\"\n✅ 环境变量配置验证完成\n✅ 环境变量配置测试通过\n\n=== 自动批准验证结果汇总 ===\n1. shouldAutoApprove方法: ✅ 通过\n2. requestConfirm行为: ✅ 通过\n3. 进化动作白名单: ✅ 通过\n4. 超时拒绝机制: ✅ 通过\n5. 环境变量配置: ✅ 通过\n\n=== 验收标准验证 ===\n1. ✅ 标记为autoEvolve的任务被confirm-manager自动批准\n2. ✅ 进化动作白名单有效（evolve_handler、evolve_extension、evolve_server）\n3. ✅ 非自动进化任务保持需要确认状态\n4. ✅ 超时拒绝机制正常工作（3分钟后自动拒绝）- 代码实现验证\n5. ✅ 验证脚本test-auto-approval.js成功执行\n\n✅ US-004 自动批准验证通过\n\n✅ US-004 自动批准验证通过\n",
+        "stderr": ""
+      }
+    }
+  ],
+  "summary": {
+    "total": 4,
+    "passed": 3,
+    "failed": 1,
+    "skipped": 0,
+    "errors": 0,
+    "passRate": 75,
+    "results": [
+      {
+        "suiteId": "US-001",
+        "suiteName": "错误检测验证",
+        "status": "passed",
+        "duration": 92,
+        "timestamp": "2026-04-13T15:37:07.115Z",
+        "priority": "P0",
+        "details": {
+          "exitCode": 0,
+          "stdout": "=== US-001 错误检测验证 ===\n\n[AutoEvolveMonitor] 监控器已初始化\n[AutoEvolveMonitor] 模块加载完成\n✅ auto-evolve-monitor模块加载成功\n监控配置: {\n  '错误类型': 10,\n  '白名单错误类型': 9,\n  '错误阈值': {\n    websocket_connection_error: 2,\n    websocket_message_error: 2,\n    dom_selector_not_found: 3,\n    content_script_injection_failed: 2,\n    task_execution_failed: 2,\n    task_execution_timeout: 1,\n    api_response_error: 3,\n    extension_permission_error: 1,\n    page_load_timeout: 2,\n    element_interaction_failed: 3,\n    default: 3\n  },\n  '进化限制': { maxPerDay: 5, coolingPeriod: 3600000, minInterval: 300000 }\n}\n\n1. 重置监控器...\n[AutoEvolveMonitor] 监控器已重置\n\n2. 记录WebSocket连接错误...\n[AutoEvolveMonitor] 记录错误: websocket_connection_error, 计数: 1\nWebSocket连接错误计数: 1\n✅ 错误记录成功\n\n3. 测试错误阈值检测...\n阈值: 2 次错误\n[AutoEvolveMonitor] 记录错误: websocket_connection_error, 计数: 2\n[AutoEvolveMonitor] 触发自动进化: websocket_connection_error (计数: 2, 阈值: 2)\n[AutoEvolveMonitor] 发送自动进化请求: {\n  type: 'auto_evolve',\n  errorType: 'websocket_connection_error',\n  errorMessage: 'Test error 1',\n  location: 'ws://localhost:8082',\n  currentCode: 'ws://localhost:8082',\n  timestamp: '2026-04-13T15:37:07.104Z',\n  errorCount: 2,\n  details: {\n    error: 'Test error 1',\n    url: 'ws://localhost:8082',\n    timestamp: '2026-04-13T15:37:07.103Z',\n    response: undefined\n  }\n}\n[Mock Chrome] 发送消息: auto_evolve\n注入第 2/2 个错误\n最终错误计数: 2\n✅ 错误计数达到阈值: 2 >= 2\n\n4. 测试冷却期机制...\n[AutoEvolveMonitor] 监控器已重置\n[AutoEvolveMonitor] 记录错误: websocket_connection_error, 计数: 1\n[AutoEvolveMonitor] 记录错误: websocket_connection_error, 计数: 2\n[AutoEvolveMonitor] 触发自动进化: websocket_connection_error (计数: 2, 阈值: 2)\n[AutoEvolveMonitor] 发送自动进化请求: {\n  type: 'auto_evolve',\n  errorType: 'websocket_connection_error',\n  errorMessage: 'Cooling test error 1',\n  location: 'ws://localhost:8082',\n  currentCode: 'ws://localhost:8082',\n  timestamp: '2026-04-13T15:37:07.104Z',\n  errorCount: 2,\n  details: {\n    error: 'Cooling test error 1',\n    url: 'ws://localhost:8082',\n    timestamp: '2026-04-13T15:37:07.104Z',\n    response: undefined\n  }\n}\n[Mock Chrome] 发送消息: auto_evolve\n冷却期配置: { coolingPeriod: 3600000, minInterval: 300000 }\n✅ 冷却期配置存在\n\n5. 测试频率限制...\n每日最大进化次数: 5\n最小进化间隔: 300000\n✅ 频率限制配置合理\n\n6. 检查自动进化白名单...\n白名单包含 9 种错误类型\n✅ 所有关键错误类型都在白名单中\n\n=== 测试结果汇总 ===\n✅ auto-evolve-monitor模块功能正常\n✅ 错误记录和计数工作正常\n✅ 错误阈值配置正确\n✅ 冷却期和频率限制配置存在\n✅ 自动进化白名单配置合理\n\n✅ US-001 错误检测验证通过\n\n注意: 这是一个基本功能验证。完整验证需要在Chrome扩展环境中进行，\n      包括实际的WebSocket错误触发和auto_evolve消息发送。\n",
+          "stderr": ""
+        }
+      },
+      {
+        "suiteId": "US-002",
+        "suiteName": "WebSocket消息流转",
+        "status": "failed",
+        "duration": 5103,
+        "timestamp": "2026-04-13T15:37:12.274Z",
+        "priority": "P0",
+        "details": {
+          "exitCode": 1,
+          "stdout": "=== US-002 消息流转测试 ===\n\n开始消息流转测试...\n\n1. 连接到WebSocket服务器: ws://localhost:8080\n✅ WebSocket连接成功\n2. 注册为extension客户端...\n✅ 已发送注册消息\n3. 发送auto_evolve测试消息...\n消息内容: {\n  \"type\": \"auto_evolve\",\n  \"errorType\": \"dom_selector_not_found\",\n  \"errorMessage\": \"DOM selector \\\".video-item\\\" not found\",\n  \"location\": \"https://example.com/videos\",\n  \"currentCode\": \"document.querySelector(\\\".video-item\\\")\",\n  \"timestamp\": \"2026-04-13T15:37:07.252Z\",\n  \"details\": {\n    \"selector\": \".video-item\",\n    \"url\": \"https://example.com/videos\",\n    \"context\": \"video list extraction\"\n  }\n}\n✅ 测试消息已发送\n\n调试建议:\n1. 确保Queue-Server正在运行 (端口 8080)\n2. 检查WebSocket handler是否正确配置\n3. 验证auto_evolve消息处理逻辑\n4. 查看服务器日志获取详细信息\n",
+          "stderr": "\n❌ 消息流转测试失败: WebSocket连接超时 (5000ms)\n\n❌ US-002 消息流转验证失败\n"
+        }
+      },
+      {
+        "suiteId": "US-003",
+        "suiteName": "AI修复生成",
+        "status": "passed",
+        "duration": 673,
+        "timestamp": "2026-04-13T15:37:12.950Z",
+        "priority": "P0",
+        "details": {
+          "exitCode": 0,
+          "stdout": "=== US-003 AI修复生成验证 ===\n\n🔄 已清除模块缓存，重新加载最新代码\n[AutoEvolveManager] 策略管理器已初始化\n[SelfDiagnosis] 诊断分析器已初始化\n[EvolutionHistory] 从 E:\\workspace\\free-chat-coder\\queue-server\\data\\evolution-history.json 加载了 6 条记录\n[EvolutionHistory] 历史管理器已初始化，加载了 6 条记录\n🔍 getEvolutionPriority 函数源码前300字符: function getEvolutionPriority(errorType) {\r\n  const priorityMap = {\r\n    websocket_connection_error: 0,  // 最高优先级：连接问题\r\n    websocket_message_error: 1,     // 高优先级：消息处理问题\r\n    dom_selector_not_found: 1,       // 高优先级：功能失效\r\n    task_execution_failed: 1,        // 高优先级：任务失败\r\n    content_script_injecti\n🔍 函数是否包含websocket_connection_error: 0? true\n✅ 模块加载成功\n开始AI修复生成验证...\n\n\n1. 测试generateEvolutionPrompt函数...\n\n测试错误类型: dom_selector_not_found\n[SelfDiagnosis] 分析错误: dom_selector_not_found\n[SelfDiagnosis] 诊断报告生成完成: diagnosis-1776094632387-gxe72\n✅ 提示生成成功，长度: 221 字符\n   ✅ 包含预期内容: \"[自动进化]\"\n   ✅ 包含预期内容: \"DOM选择器失效\"\n   ✅ 包含预期内容: \"请分析原因并使用evolve_extension修复\"\n   内容验证: 3/3 项通过\n   ✅ 诊断报告已生成并可用\n   ✅ 进化建议已生成并可用\n\n测试错误类型: websocket_connection_error\n[SelfDiagnosis] 分析错误: websocket_connection_error\n[SelfDiagnosis] 诊断报告生成完成: diagnosis-1776094632388-4nvtt\n✅ 提示生成成功，长度: 221 字符\n   ✅ 包含预期内容: \"[自动进化]\"\n   ✅ 包含预期内容: \"WebSocket连接失败\"\n   ✅ 包含预期内容: \"请分析原因并使用evolve_extension或evolve_handler修复\"\n   内容验证: 3/3 项通过\n   ✅ 诊断报告已生成并可用\n   ✅ 进化建议已生成并可用\n\n测试错误类型: task_execution_timeout\n[SelfDiagnosis] 分析错误: task_execution_timeout\n[SelfDiagnosis] 诊断报告生成完成: diagnosis-1776094632388-eqrgg\n✅ 提示生成成功，长度: 196 字符\n   ✅ 包含预期内容: \"[自动进化]\"\n   ✅ 包含预期内容: \"任务执行超时\"\n   ✅ 包含预期内容: \"请优化执行逻辑并使用合适的进化动作修复\"\n   内容验证: 3/3 项通过\n   ✅ 诊断报告已生成并可用\n   ✅ 进化建议已生成并可用\n\n✅ generateEvolutionPrompt测试通过\n\n2. 测试self-diagnosis模块...\n\n测试错误类型: dom_selector_not_found\n[SelfDiagnosis] 分析错误: dom_selector_not_found\n[SelfDiagnosis] 诊断报告生成完成: diagnosis-1776094632388-wb6ie\n   ✅ 诊断报告包含所有必需字段\n   ✅ 根因分析: 选择器语法错误\n   ✅ 严重程度评估: high\n   ✅ 修复建议: 5 项立即行动, 4 项短期修复\n\n测试错误类型: websocket_connection_error\n[SelfDiagnosis] 分析错误: websocket_connection_error\n[SelfDiagnosis] 诊断报告生成完成: diagnosis-1776094632389-llh5h\n   ✅ 诊断报告包含所有必需字段\n   ✅ 根因分析: 本地服务器未启动\n   ✅ 严重程度评估: critical\n   ✅ 修复建议: 4 项立即行动, 3 项短期修复\n\n测试错误类型: task_execution_timeout\n[SelfDiagnosis] 分析错误: task_execution_timeout\n[SelfDiagnosis] 诊断报告生成完成: diagnosis-1776094632389-q3f3q\n   ✅ 诊断报告包含所有必需字段\n   ✅ 根因分析: 性能瓶颈\n   ✅ 严重程度评估: medium\n   ✅ 修复建议: 3 项立即行动, 3 项短期修复\n\n✅ self-diagnosis模块测试通过\n\n3. 测试任务优先级设置...\n\n   [调试] getEvolutionPriority 函数类型: function\n   [调试] 测试websocket_connection_error优先级...\n   [调试] 输入errorType: \"websocket_connection_error\", 返回优先级: 0\n   [调试] 检查priorityMap: websocket_connection_error 应该映射到 0\n   ✅ websocket_connection_error: 优先级 0 (期望: 0)\n   ✅ websocket_message_error: 优先级 1 (期望: 1)\n   ✅ dom_selector_not_found: 优先级 1 (期望: 1)\n   ✅ task_execution_failed: 优先级 1 (期望: 1)\n   ✅ content_script_injection_failed: 优先级 2 (期望: 2)\n   ✅ extension_permission_error: 优先级 2 (期望: 2)\n   ✅ task_execution_timeout: 优先级 3 (期望: 3)\n   ✅ page_load_timeout: 优先级 3 (期望: 3)\n   ✅ element_interaction_failed: 优先级 3 (期望: 3)\n   ✅ api_response_error: 优先级 4 (期望: 4)\n   ✅ unknown_error_type: 优先级 5 (期望: 5)\n   ✅ 优先级设置合理: websocket_connection_error(0) > api_response_error(4)\n   ✅ 优先级设置合理: websocket_connection_error(0) > task_execution_timeout(3)\n   ✅ 优先级设置合理: dom_selector_not_found(1) > api_response_error(4)\n   ✅ 优先级设置合理: dom_selector_not_found(1) > task_execution_timeout(3)\n✅ 任务优先级设置测试通过\n\n进行WebSocket集成验证...\n\n4. 测试WebSocket集成验证...\n\n   ✅ WebSocket连接成功\n   ✅ DOM选择器错误消息已发送\n   ✅ WebSocket连接错误消息已发送\n   ✅ WebSocket测试完成\n✅ WebSocket集成验证完成\n\n=== AI修复生成验证结果汇总 ===\n1. generateEvolutionPrompt函数: ✅ 通过\n2. self-diagnosis模块: ✅ 通过\n3. 任务优先级设置: ✅ 通过\n4. WebSocket集成验证: ✅ 完成\n\n=== 验收标准验证 ===\n1. ✅ 发送DOM选择器错误时，生成的prompt包含选择器更新建议\n2. ✅ 发送WebSocket连接错误时，生成的prompt包含连接逻辑优化建议\n3. ✅ 诊断报告模块正确集成，生成结构化问题报告\n4. ✅ 任务优先级根据错误严重性正确设置（高优先级错误获得更高优先级）\n5. ✅ 不同错误类型的智能提示生成成功\n\n✅ US-003 AI修复生成验证通过\n\n✅ US-003 AI修复生成验证通过\n",
+          "stderr": ""
+        }
+      },
+      {
+        "suiteId": "US-004",
+        "suiteName": "自动批准",
+        "status": "passed",
+        "duration": 77,
+        "timestamp": "2026-04-13T15:37:13.027Z",
+        "priority": "P0",
+        "details": {
+          "exitCode": 0,
+          "stdout": "=== US-004 自动批准验证 ===\n\n✅ confirm-manager模块加载成功\n开始自动批准验证...\n\n\n1. 验证shouldAutoApprove方法...\n\n测试: 自动进化任务（evolve_extension，autoEvolve=true）\n   描述: 标记为autoEvolve的任务应该在白名单内被自动批准\n   ✅ 通过: 自动批准 (预期: 自动批准)\n测试: 自动进化任务（evolve_handler，autoEvolve=true）\n   描述: evolve_handler动作应该被自动批准\n   ✅ 通过: 自动批准 (预期: 自动批准)\n测试: 自动进化任务（evolve_server，autoEvolve=true）\n   描述: evolve_server动作应该被自动批准\n   ✅ 通过: 自动批准 (预期: 自动批准)\n测试: 自动进化任务（prompt包含标识，autoEvolve未设置）\n   描述: prompt包含自动进化标识的任务应该被自动批准\n   ✅ 通过: 自动批准 (预期: 自动批准)\n测试: 自动进化任务（options.autoEvolve=true）\n   描述: options.autoEvolve=true的任务应该被自动批准\n   ✅ 通过: 自动批准 (预期: 自动批准)\n测试: 非自动进化任务（evolve_extension，autoEvolve=false）\n   描述: autoEvolve=false的任务不应该被自动批准\n   ✅ 通过: 需要确认 (预期: 需要确认)\n测试: 非自动进化任务（evolve_extension，无autoEvolve标记）\n   描述: 没有autoEvolve标记的任务不应该被自动批准\n   ✅ 通过: 需要确认 (预期: 需要确认)\n测试: 非进化动作（非白名单动作）\n   描述: 非进化动作（不在白名单内）不应该被自动批准，即使autoEvolve=true\n   ✅ 通过: 需要确认 (预期: 需要确认)\n测试: 无任务信息的动作\n   描述: 没有任务信息的动作不应该被自动批准\n   ✅ 通过: 需要确认 (预期: 需要确认)\n\n结果: 9 通过, 0 失败\n✅ shouldAutoApprove测试通过\n\n2. 验证requestConfirm实际行为...\n\n测试: 自动进化任务（evolve_extension，autoEvolve=true）\n[ConfirmManager] Auto-approving evolution action: evolve_extension (auto-evolve task)\n   ✅ 通过: 符合预期: 自动批准\n      响应时间: 0ms\n\n结果: 1 通过, 0 失败\n✅ requestConfirm行为测试通过\n\n3. 验证进化动作白名单...\n\n白名单内容: [\"evolve_handler\",\"evolve_extension\",\"evolve_server\"]\n✅ 白名单包含所有预期的进化动作，无多余动作\n✅ 进化动作白名单测试通过\n\n4. 验证超时拒绝机制...\n\n注意: 此测试需要等待部分超时，可能需要较长时间\n配置超时时间: 180000ms (3分钟)\n测试将使用缩短的超时时间进行验证...\n验证超时机制配置...\n✅ requestConfirm方法包含超时机制 (180000ms = 3分钟)\n✅ 超时拒绝日志消息存在\n⚠️ 完整超时测试需要3分钟，跳过实际等待\n✅ 超时拒绝机制测试通过\n\n5. 验证环境变量配置...\n\n测试 AUTO_CONFIRM=false (默认)\n✅ 代码检查AUTO_CONFIRM环境变量\n测试 AUTO_CONFIRM=true\n✅ 代码正确检查AUTO_CONFIRM === \"true\"\n✅ 环境变量配置验证完成\n✅ 环境变量配置测试通过\n\n=== 自动批准验证结果汇总 ===\n1. shouldAutoApprove方法: ✅ 通过\n2. requestConfirm行为: ✅ 通过\n3. 进化动作白名单: ✅ 通过\n4. 超时拒绝机制: ✅ 通过\n5. 环境变量配置: ✅ 通过\n\n=== 验收标准验证 ===\n1. ✅ 标记为autoEvolve的任务被confirm-manager自动批准\n2. ✅ 进化动作白名单有效（evolve_handler、evolve_extension、evolve_server）\n3. ✅ 非自动进化任务保持需要确认状态\n4. ✅ 超时拒绝机制正常工作（3分钟后自动拒绝）- 代码实现验证\n5. ✅ 验证脚本test-auto-approval.js成功执行\n\n✅ US-004 自动批准验证通过\n\n✅ US-004 自动批准验证通过\n",
+          "stderr": ""
+        }
+      }
+    ]
+  }
+}

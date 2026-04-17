@@ -34,7 +34,7 @@ console.log('Submitting task to Queue-Server...');
 // 3. 发送 POST 请求到 queue-server
 const req = http.request({
   hostname: 'localhost',
-  port: 8080,
+  port: 8082,
   path: '/tasks',
   method: 'POST',
   headers: {
