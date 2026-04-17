@@ -4,6 +4,7 @@ const router = express.Router();
 const queueManager = require('../queue/manager');
 const wsHandler = require('../websocket/handler');
 const conversationStore = require('../conversations/store');
+const providerRegistry = require('../providers');
 
 // Get all tasks
 router.get('/', (req, res) => {
@@ -14,20 +15,29 @@ router.get('/', (req, res) => {
 
 // Add a new task
 router.post('/', (req, res) => {
-  const { prompt, options } = req.body;
+  const { prompt, options = {} } = req.body;
   
   if (!prompt) {
     return res.status(400).json({ error: 'Prompt is required' });
   }
 
-  const task = queueManager.addTask(prompt, options);
+  const provider = options.provider || providerRegistry.DEFAULT_PROVIDER;
+  if (!providerRegistry.isKnownProvider(provider)) {
+    return res.status(400).json({
+      error: `Unknown provider: ${provider}`,
+      supportedProviders: Object.keys(providerRegistry.providers)
+    });
+  }
+
+  const task = queueManager.addTask(prompt, providerRegistry.normalizeTaskOptions(options));
 
   if (task.options?.conversationId) {
     try {
       conversationStore.syncConversation(task.options.conversationId, {
         metadata: {
           lastTaskId: task.id,
-          lastTaskCreatedAt: task.createdAt
+          lastTaskCreatedAt: task.createdAt,
+          lastTaskProvider: task.options.provider
         },
         messages: [
           {
@@ -36,7 +46,8 @@ router.post('/', (req, res) => {
             source: 'task_prompt',
             metadata: {
               taskId: task.id,
-              attachments: task.options?.attachments || []
+              attachments: task.options?.attachments || [],
+              provider: task.options.provider
             }
           }
         ]

@@ -1,6 +1,7 @@
 // /workspace/queue-server/queue/manager.js
 const fs = require('fs');
 const path = require('path');
+const providerRegistry = require('../providers');
 
 class QueueManager {
   constructor() {
@@ -49,7 +50,7 @@ class QueueManager {
     const task = {
       id,
       prompt,
-      options,
+      options: providerRegistry.normalizeTaskOptions(options),
       status: 'pending',
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString()
@@ -94,11 +95,15 @@ class QueueManager {
     return updatedTask;
   }
 
-  requeueProcessingTasks() {
+  requeueProcessingTasks(predicate = null) {
     const requeuedTasks = [];
 
     for (const task of this.tasks.values()) {
       if (task.status !== 'processing') {
+        continue;
+      }
+
+      if (typeof predicate === 'function' && !predicate(task)) {
         continue;
       }
 
@@ -119,17 +124,30 @@ class QueueManager {
     return Array.from(this.tasks.values()).sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
   }
 
-  getNextPendingTask() {
+  getNextPendingTask(predicate = null) {
     if (this.pendingQueue.length === 0) {
       return null;
     }
-    const id = this.pendingQueue.shift();
-    const task = this.tasks.get(id);
-    if (task && task.status === 'pending') {
+
+    for (let index = 0; index < this.pendingQueue.length; index += 1) {
+      const id = this.pendingQueue[index];
+      const task = this.tasks.get(id);
+
+      if (!task || task.status !== 'pending') {
+        this.pendingQueue.splice(index, 1);
+        index -= 1;
+        continue;
+      }
+
+      if (typeof predicate === 'function' && !predicate(task)) {
+        continue;
+      }
+
+      this.pendingQueue.splice(index, 1);
       return task;
     }
-    // If it was cancelled or not pending anymore, try next
-    return this.getNextPendingTask();
+
+    return null;
   }
 }
 

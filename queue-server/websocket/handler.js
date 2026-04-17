@@ -6,6 +6,7 @@ const { autoEvolveManager } = require('../evolution/auto-evolve-manager');
 const { selfDiagnosis } = require('../evolution/self-diagnosis');
 const { evolutionHistory } = require('../evolution/evolution-history');
 const conversationStore = require('../conversations/store');
+const providerRegistry = require('../providers');
 
 const confirmManager = require('../actions/confirm-manager');
 
@@ -13,10 +14,170 @@ const confirmManager = require('../actions/confirm-manager');
 let extensionClients = new Set();
 // Keep track of web console clients
 let webClients = new Set();
+let deepseekWebBusy = false;
 
 // 注入 webClients 引用到 confirmManager，让它能推送审批请求到前端
 confirmManager.setWebClients(webClients);
 confirmManager.setEventBroadcaster(broadcastRealtimeEvent);
+
+function formatTaskError(error) {
+  if (!error) {
+    return 'Unknown error';
+  }
+
+  if (typeof error === 'string') {
+    return error;
+  }
+
+  const prefix = error.code ? `[${error.code}] ` : '';
+  return `${prefix}${error.message || String(error)}`;
+}
+
+function getProcessedPrompt(task) {
+  let processedPrompt = task.prompt;
+
+  try {
+    if (customHandler && typeof customHandler.processTask === 'function') {
+      processedPrompt = customHandler.processTask(task);
+    }
+  } catch (error) {
+    console.error('[WS] Error in custom-handler:', error);
+  }
+
+  return processedPrompt;
+}
+
+function extractProviderResult(providerResult) {
+  if (typeof providerResult === 'string') {
+    return providerResult;
+  }
+
+  if (providerResult && typeof providerResult.text === 'string') {
+    return providerResult.text;
+  }
+
+  if (providerResult && typeof providerResult.result === 'string') {
+    return providerResult.result;
+  }
+
+  return '';
+}
+
+function finishTaskUpdate(taskId, status, result, error) {
+  const normalizedError = error ? formatTaskError(error) : null;
+  const updatedTask = queueManager.updateTask(taskId, {
+    status,
+    result,
+    error: status === 'failed' ? normalizedError : error || null
+  });
+
+  if (!updatedTask) {
+    return;
+  }
+
+  if (updatedTask.options?.conversationId) {
+    try {
+      const messages = [];
+      if (status === 'completed' && result) {
+        messages.push({
+          role: 'assistant',
+          content: result,
+          source: 'task_result',
+          metadata: {
+            taskId,
+            status,
+            provider: providerRegistry.getTaskProvider(updatedTask)
+          }
+        });
+      }
+
+      if (status === 'failed' && normalizedError) {
+        messages.push({
+          role: 'system',
+          content: normalizedError,
+          source: 'task_error',
+          metadata: {
+            taskId,
+            status,
+            provider: providerRegistry.getTaskProvider(updatedTask)
+          }
+        });
+      }
+
+      if (messages.length > 0) {
+        const syncResult = conversationStore.syncConversation(updatedTask.options.conversationId, {
+          metadata: {
+            lastTaskId: taskId,
+            lastTaskStatus: status,
+            lastTaskProvider: providerRegistry.getTaskProvider(updatedTask),
+            lastTaskUpdatedAt: updatedTask.updatedAt
+          },
+          messages
+        });
+
+        broadcastToWeb({
+          type: 'conversation_updated',
+          conversation: syncResult.conversation
+        });
+      }
+    } catch (conversationError) {
+      console.error('[WS] Failed to persist task update into conversation:', conversationError);
+    }
+  }
+
+  const evolutionRequest = updatedTask?.options?.autoEvolve === true
+    ? updatedTask.options.evolutionRequest
+    : null;
+  if (evolutionRequest?.id && (status === 'completed' || status === 'failed')) {
+    evolutionHistory.updateEvolutionResult(evolutionRequest.id, {
+      success: status === 'completed',
+      result,
+      error: normalizedError,
+      duration: updatedTask.createdAt
+        ? (Date.now() - new Date(updatedTask.createdAt).getTime())
+        : undefined
+    });
+  }
+
+  broadcastToWeb({
+    type: 'task_update',
+    task: updatedTask
+  });
+
+  if (status === 'completed' || status === 'failed') {
+    assignNextTask();
+  }
+}
+
+async function executeServerSideTask(task) {
+  const providerId = providerRegistry.getTaskProvider(task);
+  const processedPrompt = getProcessedPrompt(task);
+  const executionTask = {
+    ...task,
+    prompt: processedPrompt
+  };
+
+  if (providerId === 'deepseek-web') {
+    deepseekWebBusy = true;
+  }
+
+  try {
+    const providerResult = await providerRegistry.executeTask(executionTask, {
+      prompt: processedPrompt
+    });
+    if (providerId === 'deepseek-web') {
+      deepseekWebBusy = false;
+    }
+    finishTaskUpdate(task.id, 'completed', extractProviderResult(providerResult), null);
+  } catch (error) {
+    if (providerId === 'deepseek-web') {
+      deepseekWebBusy = false;
+    }
+    const formattedError = formatTaskError(error);
+    console.warn(`[WS] ${providerId} task ${task.id} failed: ${formattedError}`);
+    finishTaskUpdate(task.id, 'failed', null, formattedError);
+  }
+}
 
 function setupWebSocket(server) {
   const wss = new WebSocket.Server({ server });
@@ -225,95 +386,22 @@ function setupWebSocket(server) {
       }
     });
 
-    function finishTaskUpdate(taskId, status, result, error) {
-      const updatedTask = queueManager.updateTask(taskId, { status, result, error });
-      if (updatedTask) {
-        if (updatedTask.options?.conversationId) {
-          try {
-            const messages = [];
-            if (status === 'completed' && result) {
-              messages.push({
-                role: 'assistant',
-                content: result,
-                source: 'task_result',
-                metadata: {
-                  taskId,
-                  status
-                }
-              });
-            }
-
-            if (status === 'failed' && error) {
-              messages.push({
-                role: 'system',
-                content: error,
-                source: 'task_error',
-                metadata: {
-                  taskId,
-                  status
-                }
-              });
-            }
-
-            if (messages.length > 0) {
-              const syncResult = conversationStore.syncConversation(updatedTask.options.conversationId, {
-                metadata: {
-                  lastTaskId: taskId,
-                  lastTaskStatus: status,
-                  lastTaskUpdatedAt: updatedTask.updatedAt
-                },
-                messages
-              });
-
-              broadcastToWeb({
-                type: 'conversation_updated',
-                conversation: syncResult.conversation
-              });
-            }
-          } catch (conversationError) {
-            console.error('[WS] Failed to persist task update into conversation:', conversationError);
-          }
-        }
-
-        const evolutionRequest = updatedTask?.options?.autoEvolve === true
-          ? updatedTask.options.evolutionRequest
-          : null;
-        if (evolutionRequest?.id && (status === 'completed' || status === 'failed')) {
-          evolutionHistory.updateEvolutionResult(evolutionRequest.id, {
-            success: status === 'completed',
-            result,
-            error,
-            duration: updatedTask.createdAt
-              ? (Date.now() - new Date(updatedTask.createdAt).getTime())
-              : undefined
-          });
-        }
-
-        // Broadcast update to web clients
-        broadcastToWeb({
-          type: 'task_update',
-          task: updatedTask
-        });
-
-        // If task is completed or failed, we can try to assign the next one
-        if (status === 'completed' || status === 'failed') {
-          assignNextTask();
-        }
-      }
-    }
-
     ws.on('close', () => {
       console.log(`[WS] Client disconnected (${clientType})`);
       if (clientType === 'extension') {
         extensionClients.delete(ws);
         if (extensionClients.size === 0) {
-          const requeuedTasks = queueManager.requeueProcessingTasks();
+          const requeuedTasks = queueManager.requeueProcessingTasks((task) => (
+            !providerRegistry.isServerSideProvider(providerRegistry.getTaskProvider(task))
+          ));
           for (const requeuedTask of requeuedTasks) {
             broadcastToWeb({
               type: 'task_update',
               task: requeuedTask
             });
           }
+
+          assignNextTask();
         }
       } else if (clientType === 'web') {
         webClients.delete(ws);
@@ -322,45 +410,63 @@ function setupWebSocket(server) {
   });
 }
 
-// Push next pending task to an available extension client
+// Dispatch the next pending task to an available execution channel.
 function assignNextTask() {
-  if (extensionClients.size === 0) {
+  const client = extensionClients.values().next().value;
+  const extensionAvailable = Boolean(client && client.readyState === WebSocket.OPEN);
+  const nextTask = queueManager.getNextPendingTask((task) => providerRegistry.canDispatchTask(task, {
+    extensionAvailable,
+    deepseekWebBusy
+  }));
+
+  if (!nextTask) {
     return;
   }
 
-  // Currently just pick the first available extension client
-  const client = extensionClients.values().next().value;
-  if (client && client.readyState === WebSocket.OPEN) {
-    const nextTask = queueManager.getNextPendingTask();
-    if (nextTask) {
-      // Update status to processing
-      queueManager.updateTask(nextTask.id, { status: 'processing' });
-      
-      // Apply custom evolutionary logic to the prompt
-      let processedPrompt = nextTask.prompt;
-      try {
-        if (customHandler && typeof customHandler.processTask === 'function') {
-          processedPrompt = customHandler.processTask(nextTask);
-        }
-      } catch (err) {
-        console.error('[WS] Error in custom-handler:', err);
-      }
-      
-      // Send task to extension
-      client.send(JSON.stringify({
-        type: 'task_assigned',
-        task: { ...nextTask, prompt: processedPrompt }
-      }));
+  const providerId = providerRegistry.getTaskProvider(nextTask);
+  const updatedTask = queueManager.updateTask(nextTask.id, {
+    status: 'processing',
+    executionChannel: providerRegistry.isServerSideProvider(providerId) ? 'queue-server' : 'extension'
+  });
 
-      // Broadcast update to web clients
+  if (!updatedTask) {
+    return;
+  }
+
+  broadcastToWeb({
+    type: 'task_update',
+    task: updatedTask
+  });
+
+  if (providerRegistry.isServerSideProvider(providerId)) {
+    console.log(`[WS] Executing task ${nextTask.id} via ${providerId} inside queue-server`);
+    executeServerSideTask(updatedTask);
+    return;
+  }
+
+  if (!extensionAvailable) {
+    const requeuedTask = queueManager.requeueTask(nextTask.id, {
+      executionChannel: null
+    });
+    if (requeuedTask) {
       broadcastToWeb({
         type: 'task_update',
-        task: queueManager.getTask(nextTask.id)
+        task: requeuedTask
       });
-      
-      console.log(`[WS] Assigned task ${nextTask.id} to extension`);
     }
+    return;
   }
+
+  const processedPrompt = getProcessedPrompt(updatedTask);
+  client.send(JSON.stringify({
+    type: 'task_assigned',
+    task: {
+      ...updatedTask,
+      prompt: processedPrompt
+    }
+  }));
+
+  console.log(`[WS] Assigned task ${nextTask.id} to extension`);
 }
 
 // Expose broadcast to web clients so HTTP API can use it
