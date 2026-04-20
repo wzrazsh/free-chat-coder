@@ -1,6 +1,7 @@
+const crypto = require('crypto');
 const http = require('http');
 const https = require('https');
-
+const vm = require('vm');
 const {
   DEFAULT_STORE_PATH,
   getRejectedBearerCandidateReason,
@@ -14,6 +15,7 @@ const {
 } = require('./stream');
 
 const DEFAULT_BASE_URL = 'https://chat.deepseek.com';
+const DEFAULT_HOSTNAME = 'chat.deepseek.com';
 const DEFAULT_ENDPOINT_PATHS = [
   '/api/v0/chat/completion',
   '/api/v0/chat/completions',
@@ -22,6 +24,15 @@ const DEFAULT_ENDPOINT_PATHS = [
   '/api/chat'
 ];
 const DEFAULT_TIMEOUT_MS = 45000;
+const DEFAULT_ACCEPT = '*/*';
+const DEFAULT_CLIENT_LOCALE = 'zh_CN';
+const DEFAULT_APP_VERSION = '20241129.1';
+const DEFAULT_CLIENT_VERSION = '1.8.0';
+const DEFAULT_CLIENT_PLATFORM = 'web';
+const POW_WORKER_MAIN_URL = 'https://fe-static.deepseek.com/chat/static/38401.a8c4129551.js';
+const POW_WORKER_DEP_URL = 'https://fe-static.deepseek.com/chat/static/60816.206e80cf1d.js';
+
+let powWorkerScriptsPromise = null;
 
 function createProviderError(code, message, details = {}, statusCode = 500) {
   const error = new Error(message);
@@ -303,8 +314,267 @@ function resolveBaseUrl(task, options = {}) {
   }
 }
 
+function isDefaultDeepSeekHost(baseUrl) {
+  try {
+    return new URL(baseUrl).hostname === DEFAULT_HOSTNAME;
+  } catch (error) {
+    return false;
+  }
+}
+
 function cloneJson(value) {
   return JSON.parse(JSON.stringify(value));
+}
+
+function fetchText(url) {
+  return new Promise((resolve, reject) => {
+    const target = new URL(url);
+    const transport = target.protocol === 'https:' ? https : http;
+    const req = transport.request({
+      protocol: target.protocol,
+      hostname: target.hostname,
+      port: target.port || undefined,
+      path: `${target.pathname}${target.search}`,
+      method: 'GET'
+    }, (res) => {
+      let body = '';
+      res.setEncoding('utf8');
+      res.on('data', (chunk) => {
+        body += chunk;
+      });
+      res.on('end', () => {
+        if ((res.statusCode || 0) < 200 || (res.statusCode || 0) >= 300) {
+          reject(new Error(`Failed to fetch ${url}: HTTP ${res.statusCode || 0}`));
+          return;
+        }
+
+        resolve(body);
+      });
+    });
+
+    req.on('error', reject);
+    req.end();
+  });
+}
+
+async function loadPowWorkerScripts() {
+  if (!powWorkerScriptsPromise) {
+    powWorkerScriptsPromise = Promise.all([
+      fetchText(POW_WORKER_MAIN_URL),
+      fetchText(POW_WORKER_DEP_URL)
+    ]).then(([mainScript, dependencyScript]) => ({
+      [POW_WORKER_MAIN_URL]: mainScript,
+      [POW_WORKER_DEP_URL]: dependencyScript
+    }));
+  }
+
+  return powWorkerScriptsPromise;
+}
+
+function encodeBase64Json(value) {
+  return Buffer.from(JSON.stringify(value), 'utf8').toString('base64');
+}
+
+async function solvePowChallenge(challenge) {
+  const scripts = await loadPowWorkerScripts();
+
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    let context = null;
+    const settle = (callback, value) => {
+      if (settled) {
+        return;
+      }
+
+      settled = true;
+      callback(value);
+    };
+    const sandbox = {
+      console,
+      performance: { now: () => Date.now() },
+      TextEncoder,
+      TextDecoder,
+      Uint8Array,
+      ArrayBuffer,
+      SharedArrayBuffer,
+      URL,
+      Buffer,
+      Error,
+      RangeError,
+      TypeError,
+      Symbol,
+      Map,
+      Set,
+      Object,
+      String,
+      Number,
+      Boolean,
+      Date,
+      Math,
+      JSON,
+      Promise,
+      postMessage: (message) => {
+        if (message?.type === 'pow-answer' && message.answer) {
+          settle(resolve, message.answer);
+          return;
+        }
+
+        settle(reject, message?.error || new Error('PoW worker returned an unexpected response.'));
+      },
+      importScripts: (...urls) => {
+        for (const scriptUrl of urls) {
+          const script = scripts[scriptUrl];
+          if (!script) {
+            throw new Error(`Unsupported DeepSeek PoW worker dependency: ${scriptUrl}`);
+          }
+
+          vm.runInContext(script, context, {
+            filename: scriptUrl,
+            timeout: 30000
+          });
+        }
+      }
+    };
+
+    sandbox.self = sandbox;
+    context = vm.createContext(sandbox);
+
+    (async () => {
+      try {
+        vm.runInContext(scripts[POW_WORKER_MAIN_URL], context, {
+          filename: POW_WORKER_MAIN_URL,
+          timeout: 30000
+        });
+
+        for (let attempt = 0; attempt < 20 && typeof sandbox.onmessage !== 'function'; attempt += 1) {
+          await new Promise((resolveTick) => setTimeout(resolveTick, 0));
+        }
+
+        if (typeof sandbox.onmessage !== 'function') {
+          throw new Error('DeepSeek PoW worker did not expose onmessage.');
+        }
+
+        sandbox.onmessage({
+          data: {
+            type: 'pow-challenge',
+            challenge
+          }
+        });
+
+        if (!settled) {
+          settle(reject, new Error('DeepSeek PoW worker did not return an answer.'));
+        }
+      } catch (error) {
+        settle(reject, error);
+      }
+    })();
+  });
+}
+
+function extractBizData(payload) {
+  if (!payload || typeof payload !== 'object') {
+    return null;
+  }
+
+  const data = payload.data;
+  if (!data || typeof data !== 'object') {
+    return null;
+  }
+
+  if (data.biz_code != null && Number(data.biz_code) !== 0) {
+    return null;
+  }
+
+  return data.biz_data || null;
+}
+
+function getChatSessionIdFromPayload(payload) {
+  if (!payload || typeof payload !== 'object') {
+    return null;
+  }
+
+  return payload.chat_session_id
+    || payload.chatSessionId
+    || payload.session_id
+    || payload.sessionId
+    || payload.conversation_id
+    || payload.conversationId
+    || null;
+}
+
+function hasAnyDefinedField(payload, fieldNames) {
+  return fieldNames.some((fieldName) => payload[fieldName] != null);
+}
+
+function resolvePayloadFieldName(rawValue, fallback, aliases) {
+  if (typeof rawValue === 'string') {
+    const normalized = rawValue.trim();
+    if (normalized && aliases.includes(normalized)) {
+      return normalized;
+    }
+  }
+
+  return fallback;
+}
+
+function applyConversationFields(payload, { providerSessionId, providerParentMessageId, deepseekOptions }) {
+  const sessionFieldAliases = ['session_id', 'sessionId', 'conversation_id', 'conversationId'];
+  const parentFieldAliases = ['parent_message_id', 'parentMessageId', 'parent_id', 'parentId'];
+  const sessionField = resolvePayloadFieldName(
+    deepseekOptions.sessionField,
+    'session_id',
+    sessionFieldAliases
+  );
+  const parentMessageField = resolvePayloadFieldName(
+    deepseekOptions.parentMessageField,
+    'parent_message_id',
+    parentFieldAliases
+  );
+
+  if (providerSessionId && !hasAnyDefinedField(payload, sessionFieldAliases)) {
+    payload[sessionField] = providerSessionId;
+  }
+
+  if (providerParentMessageId && !hasAnyDefinedField(payload, parentFieldAliases)) {
+    payload[parentMessageField] = providerParentMessageId;
+  }
+}
+
+function getClientTimezoneOffsetSeconds() {
+  return String(-new Date().getTimezoneOffset() * 60);
+}
+
+function buildRequestHeaders(auth, url, body, payloadLength, deepseekOptions) {
+  const sessionReferer = body?.chat_session_id
+    ? `${url.origin}/a/chat/s/${body.chat_session_id}`
+    : `${url.origin}/`;
+  const requestHeaders = {
+    Accept: deepseekOptions.accept || DEFAULT_ACCEPT,
+    'Content-Type': 'application/json',
+    Authorization: `Bearer ${auth.bearerToken}`,
+    Cookie: auth.cookieHeader,
+    'User-Agent': auth.userAgent,
+    'x-client-locale': deepseekOptions.clientLocale || DEFAULT_CLIENT_LOCALE,
+    'x-client-timezone-offset': String(deepseekOptions.clientTimezoneOffset || getClientTimezoneOffsetSeconds()),
+    'x-app-version': deepseekOptions.appVersion || DEFAULT_APP_VERSION,
+    'x-client-version': deepseekOptions.clientVersion || DEFAULT_CLIENT_VERSION,
+    'x-client-platform': deepseekOptions.clientPlatform || DEFAULT_CLIENT_PLATFORM,
+    Origin: deepseekOptions.origin || url.origin,
+    Referer: deepseekOptions.referer || sessionReferer,
+    'Content-Length': payloadLength
+  };
+  const overrideHeaders = isPlainObject(deepseekOptions.headers) ? deepseekOptions.headers : {};
+
+  for (const [headerName, headerValue] of Object.entries(overrideHeaders)) {
+    if (headerValue == null) {
+      delete requestHeaders[headerName];
+      continue;
+    }
+
+    requestHeaders[headerName] = headerValue;
+  }
+
+  return requestHeaders;
 }
 
 function safeJsonParse(value) {
@@ -352,6 +622,7 @@ function buildRequestPayload(task, options = {}) {
     ? cloneJson(requestBody)
     : {
         message: prompt,
+        prompt: prompt,
         stream: true
       };
   const providerSessionId = deepseekOptions.providerSessionId
@@ -364,7 +635,7 @@ function buildRequestPayload(task, options = {}) {
     || null;
 
   if (!requestBody) {
-    if (payload.message == null && payload.prompt == null && payload.input == null) {
+    if (!hasAnyDefinedField(payload, ['prompt', 'message', 'input', 'messages'])) {
       payload.message = prompt;
     }
 
@@ -373,20 +644,50 @@ function buildRequestPayload(task, options = {}) {
     }
   }
 
-  if (payload.message == null && payload.prompt == null && payload.input == null) {
+  if (!hasAnyDefinedField(payload, ['prompt', 'message', 'input', 'messages'])) {
     payload.message = prompt;
+  }
+
+  if ((deepseekOptions.includePromptField !== false || !requestBody) && payload.prompt == null) {
+    payload.prompt = prompt;
+  }
+
+  if (payload.ref_file_ids == null) {
+    payload.ref_file_ids = [];
+  }
+
+  if (payload.parent_message_id == null && payload.parentMessageId == null && payload.parent_id == null && payload.parentId == null) {
+    payload.parent_message_id = providerParentMessageId || null;
+  }
+
+  if (payload.model_type == null && payload.modelType == null) {
+    payload.model_type = deepseekOptions.modelType || 'default';
+  }
+
+  if (payload.thinking_enabled == null && payload.thinkingEnabled == null) {
+    payload.thinking_enabled = deepseekOptions.thinkingEnabled ?? true;
+  }
+
+  if (payload.search_enabled == null && payload.searchEnabled == null) {
+    payload.search_enabled = deepseekOptions.searchEnabled ?? true;
+  }
+
+  if (payload.preempt == null) {
+    payload.preempt = deepseekOptions.preempt ?? false;
   }
 
   if (deepseekOptions.model && payload.model == null) {
     payload.model = deepseekOptions.model;
   }
 
-  if (providerSessionId && payload.session_id == null && payload.sessionId == null && payload.conversation_id == null && payload.conversationId == null) {
-    payload.session_id = providerSessionId;
-  }
+  applyConversationFields(payload, {
+    providerSessionId,
+    providerParentMessageId,
+    deepseekOptions
+  });
 
-  if (providerParentMessageId && payload.parent_message_id == null && payload.parentMessageId == null && payload.parent_id == null && payload.parentId == null) {
-    payload.parent_message_id = providerParentMessageId;
+  if (payload.chat_session_id == null && deepseekOptions.includeChatSessionId !== false) {
+    payload.chat_session_id = deepseekOptions.chatSessionId || providerSessionId || null;
   }
 
   return {
@@ -407,23 +708,22 @@ function redactPreview(value) {
     .slice(0, 240);
 }
 
-function sendRequest({ baseUrl, endpointPath, body, authState, timeoutMs, task, options = {} }) {
+function sendRequest({ baseUrl, endpointPath, body, authState, timeoutMs, task, options = {}, additionalHeaders = null }) {
   const deepseekOptions = resolveDeepseekOptions(task, options);
   const url = new URL(endpointPath, baseUrl);
   const payload = JSON.stringify(body);
   const transport = url.protocol === 'https:' ? https : http;
   const auth = authState.auth || {};
-  const requestHeaders = {
-    ...(isPlainObject(deepseekOptions.headers) ? deepseekOptions.headers : {}),
-    Accept: 'text/event-stream, application/json',
-    'Content-Type': 'application/json',
-    Authorization: `Bearer ${auth.bearerToken}`,
-    Cookie: auth.cookieHeader,
-    'User-Agent': auth.userAgent,
-    Origin: url.origin,
-    Referer: `${url.origin}/`,
-    'Content-Length': Buffer.byteLength(payload)
-  };
+  const requestHeaders = buildRequestHeaders(
+    auth,
+    url,
+    body,
+    Buffer.byteLength(payload),
+    deepseekOptions
+  );
+  if (isPlainObject(additionalHeaders)) {
+    Object.assign(requestHeaders, additionalHeaders);
+  }
 
   return new Promise((resolve, reject) => {
     const req = transport.request({
@@ -486,6 +786,82 @@ function sendRequest({ baseUrl, endpointPath, body, authState, timeoutMs, task, 
   });
 }
 
+async function createChatSession({ baseUrl, authState, timeoutMs, task, options = {} }) {
+  const response = await sendRequest({
+    baseUrl,
+    endpointPath: '/api/v0/chat_session/create',
+    body: {},
+    authState,
+    timeoutMs,
+    task,
+    options
+  });
+  const payload = safeJsonParse(response.body);
+  const bizData = extractBizData(payload);
+  const chatSessionId = bizData?.chat_session?.id || null;
+
+  if (!chatSessionId) {
+    throw createProviderError(
+      'DEEPSEEK_SESSION_CREATE_FAILED',
+      'DeepSeek Web did not return a chat session id.',
+      {
+        stage: 'session-create',
+        taskId: task?.id || null,
+        statusCode: response.statusCode,
+        bodyPreview: redactPreview(response.body)
+      },
+      502
+    );
+  }
+
+  return chatSessionId;
+}
+
+async function createPowHeader({ baseUrl, endpointPath, authState, timeoutMs, task, options = {} }) {
+  const response = await sendRequest({
+    baseUrl,
+    endpointPath: '/api/v0/chat/create_pow_challenge',
+    body: { target_path: endpointPath },
+    authState,
+    timeoutMs,
+    task,
+    options
+  });
+  const payload = safeJsonParse(response.body);
+  const bizData = extractBizData(payload);
+  const challenge = bizData?.challenge || null;
+
+  if (!challenge) {
+    throw createProviderError(
+      'DEEPSEEK_POW_CHALLENGE_FAILED',
+      'DeepSeek Web did not return a PoW challenge.',
+      {
+        stage: 'pow-challenge',
+        taskId: task?.id || null,
+        endpointPath,
+        statusCode: response.statusCode,
+        bodyPreview: redactPreview(response.body)
+      },
+      502
+    );
+  }
+
+  const answer = await solvePowChallenge({
+    ...challenge,
+    expireAt: challenge.expire_at,
+    expireAfter: challenge.expire_after
+  });
+
+  return encodeBase64Json({
+    algorithm: challenge.algorithm,
+    challenge: challenge.challenge,
+    salt: challenge.salt,
+    answer: answer.answer,
+    signature: challenge.signature,
+    target_path: endpointPath
+  });
+}
+
 function buildResponseError(response, task, endpointPath) {
   return createProviderError(
     'DEEPSEEK_HTTP_ERROR',
@@ -530,14 +906,42 @@ async function dispatchRequest(task, authState, options = {}) {
   const baseUrl = resolveBaseUrl(task, options);
   const endpointPaths = resolveEndpointPaths(task, options);
   const timeoutMs = resolveTimeoutMs(task, options);
+  const isHostedDeepSeek = isDefaultDeepSeekHost(baseUrl);
+  const deepseekOptions = resolveDeepseekOptions(task, options);
   const request = buildRequestPayload(task, options);
   let lastError = null;
+
+  if (!getChatSessionIdFromPayload(request.payload) && isHostedDeepSeek && deepseekOptions.autoCreateSession !== false) {
+    const chatSessionId = await createChatSession({
+      baseUrl,
+      authState,
+      timeoutMs,
+      task,
+      options
+    });
+    request.payload.chat_session_id = chatSessionId;
+    request.providerSessionId = chatSessionId;
+  }
 
   for (let index = 0; index < endpointPaths.length; index += 1) {
     const endpointPath = endpointPaths[index];
     let response = null;
+    let additionalHeaders = null;
 
     try {
+      if (isHostedDeepSeek && deepseekOptions.enablePow !== false) {
+        additionalHeaders = {
+          'X-DS-PoW-Response': await createPowHeader({
+            baseUrl,
+            endpointPath,
+            authState,
+            timeoutMs,
+            task,
+            options
+          })
+        };
+      }
+
       response = await sendRequest({
         baseUrl,
         endpointPath,
@@ -545,7 +949,8 @@ async function dispatchRequest(task, authState, options = {}) {
         authState,
         timeoutMs,
         task,
-        options
+        options,
+        additionalHeaders
       });
     } catch (error) {
       lastError = error;

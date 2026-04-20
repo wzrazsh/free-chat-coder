@@ -98,6 +98,53 @@ interface EvolutionValidation {
   } | null;
 }
 
+interface ApiTestResult {
+  status: number;
+  statusText: string;
+  durationMs: number;
+  body: string;
+  headers: Record<string, string>;
+}
+
+const API_TEST_PRESETS = [
+  {
+    label: 'Health',
+    method: 'GET',
+    path: '/health',
+    body: ''
+  },
+  {
+    label: 'Tasks',
+    method: 'GET',
+    path: '/tasks',
+    body: ''
+  },
+  {
+    label: 'Conversations',
+    method: 'GET',
+    path: '/conversations?origin=extension&limit=20',
+    body: ''
+  },
+  {
+    label: 'Create Task',
+    method: 'POST',
+    path: '/tasks',
+    body: JSON.stringify({ prompt: 'API tester task from web console' }, null, 2)
+  }
+] as const;
+
+const formatApiPayload = (value: unknown) => {
+  if (typeof value === 'string') {
+    return value;
+  }
+
+  try {
+    return JSON.stringify(value, null, 2);
+  } catch {
+    return String(value);
+  }
+};
+
 const upsertTask = (taskList: Task[], nextTask: Task) => {
   const existingIndex = taskList.findIndex((task) => task.id === nextTask.id);
   if (existingIndex === -1) {
@@ -147,6 +194,13 @@ function App() {
   const [evolutionValidationHistory, setEvolutionValidationHistory] = useState<EvolutionValidation[]>([]);
   const [evolveSubmitError, setEvolveSubmitError] = useState<string | null>(null);
   const [isEvolving, setIsEvolving] = useState(false);
+  const [apiTestMethod, setApiTestMethod] = useState('GET');
+  const [apiTestPath, setApiTestPath] = useState('/health');
+  const [apiTestHeaders, setApiTestHeaders] = useState('{\n  "Content-Type": "application/json"\n}');
+  const [apiTestBody, setApiTestBody] = useState('');
+  const [apiTestResult, setApiTestResult] = useState<ApiTestResult | null>(null);
+  const [apiTestError, setApiTestError] = useState<string | null>(null);
+  const [isApiTesting, setIsApiTesting] = useState(false);
   const wsRef = useRef<WebSocket | null>(null);
   const activeConversationIdRef = useRef('');
 
@@ -403,6 +457,66 @@ function App() {
       console.error('Failed to respond confirm:', err);
     } finally {
       setRespondingConfirmId(null);
+    }
+  };
+
+  const handleApiPreset = (preset: (typeof API_TEST_PRESETS)[number]) => {
+    setApiTestMethod(preset.method);
+    setApiTestPath(preset.path);
+    setApiTestBody(preset.body);
+    setApiTestError(null);
+  };
+
+  const handleRunApiTest = async () => {
+    const path = apiTestPath.trim();
+    if (!path) {
+      setApiTestError('Path is required.');
+      return;
+    }
+
+    setApiTestError(null);
+    setIsApiTesting(true);
+
+    try {
+      const rawHeaders = apiTestHeaders.trim();
+      const parsedHeaders = rawHeaders ? JSON.parse(rawHeaders) : {};
+      if (parsedHeaders && typeof parsedHeaders !== 'object') {
+        throw new Error('Headers must be a JSON object.');
+      }
+
+      const init: RequestInit = {
+        method: apiTestMethod,
+        headers: parsedHeaders as HeadersInit,
+      };
+
+      if (apiTestMethod !== 'GET' && apiTestMethod !== 'HEAD') {
+        init.body = apiTestBody;
+      }
+
+      const startedAt = performance.now();
+      const response = await queueRequest(path.startsWith('/') ? path : `/${path}`, init);
+      const durationMs = Math.round(performance.now() - startedAt);
+      const bodyText = await response.text();
+      let formattedBody = bodyText;
+
+      try {
+        formattedBody = JSON.stringify(JSON.parse(bodyText), null, 2);
+      } catch {
+        formattedBody = bodyText;
+      }
+
+      setApiTestResult({
+        status: response.status,
+        statusText: response.statusText,
+        durationMs,
+        body: formattedBody,
+        headers: Object.fromEntries(response.headers.entries()),
+      });
+    } catch (error) {
+      setApiTestResult(null);
+      setApiTestError(error instanceof Error ? error.message : 'API test failed.');
+    } finally {
+      setIsApiTesting(false);
     }
   };
 
@@ -836,6 +950,134 @@ function App() {
                   </button>
                 </div>
               </form>
+            </div>
+
+            <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
+              <div className="flex items-start justify-between gap-4 mb-4">
+                <div>
+                  <h2 className="text-xl font-semibold">API Tester</h2>
+                  <p className="text-sm text-gray-500">Call the queue server directly from the `5173` console and inspect the raw response.</p>
+                </div>
+                <div className="text-xs text-gray-500 rounded-lg bg-gray-50 border border-gray-200 px-3 py-2">
+                  Target: {queuePort ? `127.0.0.1:${queuePort}` : 'auto-detect'}
+                </div>
+              </div>
+
+              <div className="flex flex-wrap gap-2 mb-4">
+                {API_TEST_PRESETS.map((preset) => (
+                  <button
+                    key={preset.label}
+                    type="button"
+                    onClick={() => handleApiPreset(preset)}
+                    className="px-3 py-1.5 text-sm font-medium text-gray-700 bg-gray-50 hover:bg-gray-100 rounded-lg border border-gray-200 transition-colors"
+                  >
+                    {preset.label}
+                  </button>
+                ))}
+              </div>
+
+              <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] gap-6">
+                <div className="space-y-4">
+                  <div className="flex gap-3">
+                    <select
+                      value={apiTestMethod}
+                      onChange={(event) => setApiTestMethod(event.target.value)}
+                      className="w-32 rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm font-medium text-gray-900"
+                    >
+                      {['GET', 'POST', 'PUT', 'PATCH', 'DELETE'].map((method) => (
+                        <option key={method} value={method}>{method}</option>
+                      ))}
+                    </select>
+                    <input
+                      value={apiTestPath}
+                      onChange={(event) => setApiTestPath(event.target.value)}
+                      placeholder="/health"
+                      className="flex-1 rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-900 font-mono"
+                    />
+                  </div>
+
+                  <label className="block">
+                    <span className="mb-2 block text-sm font-medium text-gray-700">Headers JSON</span>
+                    <textarea
+                      value={apiTestHeaders}
+                      onChange={(event) => setApiTestHeaders(event.target.value)}
+                      spellCheck={false}
+                      className="h-32 w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-900 font-mono"
+                    />
+                  </label>
+
+                  <label className="block">
+                    <span className="mb-2 block text-sm font-medium text-gray-700">Request Body</span>
+                    <textarea
+                      value={apiTestBody}
+                      onChange={(event) => setApiTestBody(event.target.value)}
+                      spellCheck={false}
+                      className="h-48 w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-900 font-mono"
+                    />
+                  </label>
+
+                  <div className="flex items-center justify-between gap-4">
+                    {apiTestError ? (
+                      <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+                        {apiTestError}
+                      </div>
+                    ) : (
+                      <div className="text-sm text-gray-500">Responses are shown exactly as returned by the queue server.</div>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => handleRunApiTest().catch((err) => console.error('Failed to run API test:', err))}
+                      disabled={isApiTesting}
+                      className="px-5 py-2 bg-slate-900 text-white font-medium rounded-lg hover:bg-slate-800 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                    >
+                      {isApiTesting ? 'Running...' : 'Send Request'}
+                    </button>
+                  </div>
+                </div>
+
+                <div className="rounded-xl border border-gray-200 bg-gray-50 p-4 min-h-[28rem]">
+                  <div className="flex items-center justify-between gap-3 mb-3">
+                    <div>
+                      <h3 className="font-medium text-gray-900">Response</h3>
+                      <p className="text-sm text-gray-500">Status, headers, and body preview.</p>
+                    </div>
+                    {apiTestResult && (
+                      <span className={`px-3 py-1 rounded-full text-xs font-medium ${apiTestResult.status >= 200 && apiTestResult.status < 300 ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+                        {apiTestResult.status} {apiTestResult.statusText || ''}
+                      </span>
+                    )}
+                  </div>
+
+                  {!apiTestResult ? (
+                    <div className="h-full flex items-center justify-center text-sm text-gray-500">
+                      Run a request to inspect the queue server response.
+                    </div>
+                  ) : (
+                    <div className="space-y-4">
+                      <div className="grid grid-cols-2 gap-3 text-sm">
+                        <div className="rounded-lg border border-gray-200 bg-white px-3 py-2">
+                          <div className="text-xs uppercase tracking-wide text-gray-500">Duration</div>
+                          <div className="mt-1 font-medium text-gray-900">{apiTestResult.durationMs} ms</div>
+                        </div>
+                        <div className="rounded-lg border border-gray-200 bg-white px-3 py-2">
+                          <div className="text-xs uppercase tracking-wide text-gray-500">Headers</div>
+                          <div className="mt-1 font-medium text-gray-900">{Object.keys(apiTestResult.headers).length}</div>
+                        </div>
+                      </div>
+
+                      <div>
+                        <div className="mb-2 text-sm font-medium text-gray-700">Response Headers</div>
+                        <pre className="max-h-40 overflow-auto rounded-lg border border-gray-200 bg-white p-3 text-xs text-gray-700 font-mono whitespace-pre-wrap break-all">{formatApiPayload(apiTestResult.headers)}</pre>
+                      </div>
+
+                      <div>
+                        <div className="mb-2 text-sm font-medium text-gray-700">Response Body</div>
+                        <pre className="max-h-[28rem] overflow-auto rounded-lg border border-gray-200 bg-white p-3 text-xs text-gray-800 font-mono whitespace-pre-wrap break-all">{apiTestResult.body || '(empty response body)'}</pre>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
             </div>
 
             <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">

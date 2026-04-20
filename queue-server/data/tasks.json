@@ -2358,5 +2358,18 @@
     "createdAt": "2026-04-17T00:36:59.686Z",
     "updatedAt": "2026-04-17T00:37:27.311Z",
     "result": "明白了，您希望我按照新的系统上下文，使用动作调用来继续交互。但刚才的 execute_command 被您拒绝了，说明您可能不希望直接执行系统命令，或者需要我先解释清楚操作目的。\n\n请告诉我您当前的具体目标，例如：\n\n想查看或修改某个文件？\n\n想运行一段 JavaScript 代码？\n\n想获取系统信息？\n\n想切换 DeepSeek 的思考/搜索模式？\n\n或者其他开发/自动化任务？\n\n我会根据您的需求，使用合适的动作（read_file、write_file、run_code、switch_mode 等）来安全地完成，并在执行前说明意图。\n\n如果您暂时没有明确任务，我可以先帮您获取当前系统环境信息：\n\n<ActionBlock> ```action { \"action\": \"get_system_info\", \"params\": {} } ``` </ActionBlock>\n\n这样我们可以确认基础环境，再继续后续工作。您同意吗？"
+  },
+  {
+    "id": "1776505742356-l3sai",
+    "prompt": "API tester task from web console",
+    "options": {
+      "provider": "extension-dom"
+    },
+    "status": "failed",
+    "createdAt": "2026-04-18T09:49:02.356Z",
+    "updatedAt": "2026-04-18T09:49:02.911Z",
+    "executionChannel": "extension",
+    "result": null,
+    "error": "Could not establish connection. Receiving end does not exist."
   }
 ]

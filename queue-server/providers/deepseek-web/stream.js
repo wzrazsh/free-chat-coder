@@ -146,10 +146,15 @@ function pickFirstScalar(root, candidatePaths) {
 const DELTA_TEXT_PATHS = [
   'delta',
   'delta.content',
+  'delta.content.0.text',
   'data.delta',
   'data.delta.content',
+  'data.delta.content.0.text',
   'choices.0.delta',
-  'choices.0.delta.content'
+  'choices.0.delta.content',
+  'choices.0.delta.content.0.text',
+  'data.choices.0.delta.content',
+  'data.choices.0.delta.content.0.text'
 ];
 
 const TEXT_PATHS = [
@@ -171,8 +176,14 @@ const TEXT_PATHS = [
   'choices.0.text',
   'choices.0.content',
   'choices.0.message.content',
+  'data.choices.0.message.content',
   'result.text',
-  'result.content'
+  'result.content',
+  'result.message.content',
+  'message.text',
+  'data.message.text',
+  'output.0.content.0.text',
+  'data.output.0.content.0.text'
 ];
 
 const SESSION_ID_PATHS = [
@@ -185,7 +196,10 @@ const SESSION_ID_PATHS = [
   'data.conversation_id',
   'data.conversationId',
   'result.session_id',
-  'result.conversation_id'
+  'result.conversation_id',
+  'conversation.id',
+  'data.conversation.id',
+  'result.conversation.id'
 ];
 
 const PARENT_MESSAGE_ID_PATHS = [
@@ -197,16 +211,21 @@ const PARENT_MESSAGE_ID_PATHS = [
   'data.parentMessageId',
   'data.parent_id',
   'data.parentId',
-  'result.parent_message_id'
+  'result.parent_message_id',
+  'message.parent_id',
+  'data.message.parent_id'
 ];
 
 const MESSAGE_ID_PATHS = [
   'message_id',
   'messageId',
+  'message.id',
   'data.message_id',
   'data.messageId',
   'result.message_id',
-  'result.messageId'
+  'result.messageId',
+  'data.message.id',
+  'result.message.id'
 ];
 
 const REQUEST_ID_PATHS = [
@@ -216,8 +235,11 @@ const REQUEST_ID_PATHS = [
   'traceId',
   'data.request_id',
   'data.requestId',
+  'data.trace_id',
+  'data.traceId',
   'meta.request_id',
-  'meta.requestId'
+  'meta.requestId',
+  'error.request_id'
 ];
 
 function extractMetadata(payload) {
@@ -239,19 +261,19 @@ function extractMetadata(payload) {
 }
 
 function mergeMetadata(target, patch) {
-  if (patch.sessionId && !target.sessionId) {
+  if (patch.sessionId) {
     target.sessionId = patch.sessionId;
   }
 
-  if (patch.parentMessageId && !target.parentMessageId) {
+  if (patch.parentMessageId) {
     target.parentMessageId = patch.parentMessageId;
   }
 
-  if (patch.messageId && !target.messageId) {
+  if (patch.messageId) {
     target.messageId = patch.messageId;
   }
 
-  if (patch.requestId && !target.requestId) {
+  if (patch.requestId) {
     target.requestId = patch.requestId;
   }
 }
@@ -318,6 +340,10 @@ function parseEventStreamResponse(body) {
     }
 
     if (!event.json) {
+      if (event.event !== 'message') {
+        continue;
+      }
+
       streamedText += event.data;
       continue;
     }
@@ -363,14 +389,22 @@ function parseChatResponse(response = {}) {
       : '';
   const contentType = getHeader(response.headers, 'content-type').toLowerCase();
   const looksLikeEventStream = contentType.includes('text/event-stream') || /^\s*data:/m.test(body);
+  const responseRequestId = getHeader(response.headers, 'x-request-id') || getHeader(response.headers, 'x-trace-id');
 
   if (looksLikeEventStream) {
-    return parseEventStreamResponse(body);
+    const parsedEventStream = parseEventStreamResponse(body);
+    if (!parsedEventStream.requestId && responseRequestId) {
+      parsedEventStream.requestId = responseRequestId;
+    }
+    return parsedEventStream;
   }
 
   if (contentType.includes('json') || /^\s*[\[{]/.test(body)) {
     const parsedJson = parseJsonResponse(body);
     if (parsedJson) {
+      if (!parsedJson.requestId && responseRequestId) {
+        parsedJson.requestId = responseRequestId;
+      }
       return parsedJson;
     }
   }
@@ -379,7 +413,7 @@ function parseChatResponse(response = {}) {
     sessionId: null,
     parentMessageId: null,
     messageId: null,
-    requestId: null,
+    requestId: responseRequestId || null,
     mode: 'text',
     text: body
   };

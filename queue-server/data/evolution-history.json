@@ -1,6 +1,6 @@
 {
   "version": "1.0",
-  "lastUpdated": "2026-04-17T09:00:45.994Z",
+  "lastUpdated": "2026-04-20T05:53:23.909Z",
   "history": [],
   "stats": {
     "totalEvolutions": 0,
@@ -12,7 +12,7 @@
     "byHour": {}
   },
   "lastAnalysis": {
-    "timestamp": 1776414345970,
+    "timestamp": 1776617302869,
     "windowSize": 0,
     "trends": {
       "successRate": null,
@@ -27,7 +27,7 @@
   },
   "config": {
     "storage": {
-      "dataDir": "E:\\workspace\\free-chat-coder\\queue-server\\data",
+      "dataDir": "e:\\workspace\\free-chat-coder\\queue-server\\data",
       "historyFile": "evolution-history.json",
       "maxFileSize": 10485760,
       "backupCount": 5,

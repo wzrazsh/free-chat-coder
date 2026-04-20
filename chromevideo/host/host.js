@@ -32,6 +32,8 @@ const SERVICES = {
   }
 };
 
+const startingServices = new Set();
+
 function sendMessage(msg) {
   const buffer = Buffer.from(JSON.stringify(msg));
   const header = Buffer.alloc(4);
@@ -170,7 +172,6 @@ function killProcess(pid) {
     process.kill(-pid, 'SIGKILL');
     return true;
   } catch (error) {
-    // Fall through and try the direct pid.
   }
 
   try {
@@ -183,6 +184,209 @@ function killProcess(pid) {
 
 function killPidTree(pid) {
   return killProcess(pid);
+}
+
+function getProcessCommandLine(pid) {
+  if (!pid) {
+    return '';
+  }
+
+  if (!IS_WINDOWS) {
+    try {
+      return cp.execFileSync('ps', ['-p', String(pid), '-o', 'command='], { encoding: 'utf8' }).trim();
+    } catch (error) {
+      return '';
+    }
+  }
+
+  try {
+    const cmd = `powershell -NoProfile -Command "(Get-CimInstance Win32_Process -Filter 'ProcessId=${pid}').CommandLine"`;
+    const output = cp.execSync(cmd, { windowsHide: true, timeout: 5000 }).toString().trim();
+    return output || '';
+  } catch (error) {
+    try {
+      const output = cp.execSync(`wmic process where "ProcessId=${pid}" get CommandLine /value`, { windowsHide: true }).toString();
+      const match = output.match(/CommandLine=(.*)/);
+      return match ? match[1].trim() : '';
+    } catch (fallbackError) {
+      return '';
+    }
+  }
+}
+
+function getServiceProcessPatterns(name) {
+  const service = SERVICES[name];
+  if (!service) {
+    return [];
+  }
+
+  const patterns = [];
+
+  if (service.dir) {
+    patterns.push(path.basename(service.dir));
+  }
+
+  for (const arg of service.args || []) {
+    const normalized = String(arg || '').replace(/\\/g, '/');
+    if (!normalized) {
+      continue;
+    }
+
+    const basename = path.basename(normalized);
+    if (basename) {
+      patterns.push(basename);
+    }
+  }
+
+  if (name === 'SOLOCoder-QueueServer') {
+    patterns.push('queue-server', 'nodemon', 'index.js');
+  } else if (name === 'SOLOCoder-WebConsole') {
+    patterns.push('web-console', 'vite');
+  }
+
+  return [...new Set(patterns.map((item) => item.toLowerCase()).filter(Boolean))];
+}
+
+function isPidOwnedByService(name, pid, portHint = null) {
+  if (!pid || !isPidAlive(pid)) {
+    return false;
+  }
+
+  const service = SERVICES[name];
+  if (!service) {
+    return false;
+  }
+
+  const portsToCheck = [...new Set(
+    [portHint, service.port]
+      .map((value) => Number(value) || null)
+      .filter(Boolean)
+  )];
+
+  for (const port of portsToCheck) {
+    if (getAllPidsByPort(port).includes(pid)) {
+      return true;
+    }
+  }
+
+  const commandLine = getProcessCommandLine(pid).toLowerCase();
+  if (!commandLine) {
+    return false;
+  }
+
+  return getServiceProcessPatterns(name).some((pattern) => commandLine.includes(pattern));
+}
+
+function getAllPidsByPort(port) {
+  if (!port) {
+    return [];
+  }
+
+  if (!IS_WINDOWS) {
+    try {
+      const output = cp.execFileSync('ss', ['-ltnpH'], { encoding: 'utf8' });
+      const lines = output.trim().split('\n').filter(Boolean);
+      const portPattern = new RegExp(`:${port}\\b`);
+      const pids = [];
+
+      for (const line of lines) {
+        if (!portPattern.test(line)) {
+          continue;
+        }
+
+        const match = line.match(/pid=(\d+)/);
+        if (match) {
+          const pid = Number(match[1]);
+          if (!pids.includes(pid)) {
+            pids.push(pid);
+          }
+        }
+      }
+
+      return pids;
+    } catch (error) {
+      return [];
+    }
+  }
+
+  try {
+    const output = cp.execSync('netstat -ano | findstr :' + port, { windowsHide: true }).toString();
+    const lines = output.trim().split('\n');
+    const pids = [];
+
+    for (const line of lines) {
+      if (line.includes('LISTENING') || line.includes('ESTABLISHED')) {
+        const parts = line.trim().split(/\s+/);
+        const pid = Number(parts[parts.length - 1]);
+        if (pid && !pids.includes(pid)) {
+          pids.push(pid);
+        }
+      }
+    }
+
+    return pids;
+  } catch (err) {
+    return [];
+  }
+}
+
+function getPidsByCommandLine(pattern) {
+  if (!IS_WINDOWS) {
+    try {
+      const output = cp.execSync(`ps aux | grep -v grep | grep '${pattern}'`, { encoding: 'utf8' });
+      const lines = output.trim().split('\n').filter(Boolean);
+      return lines.map(line => {
+        const parts = line.trim().split(/\s+/);
+        return Number(parts[1]) || null;
+      }).filter(Boolean);
+    } catch (error) {
+      return [];
+    }
+  }
+
+  try {
+    const cmd = `powershell -NoProfile -Command "(Get-CimInstance Win32_Process -Filter \\"CommandLine like '%${pattern}%'\\" | Select-Object -ExpandProperty ProcessId) -join ','"`;
+    const output = cp.execSync(cmd, { windowsHide: true, timeout: 8000 }).toString().trim();
+    if (!output) return [];
+    return output.split(',').map(id => Number(id.trim())).filter(Boolean);
+  } catch (error) {
+    try {
+      const output = cp.execSync(`wmic process where "CommandLine like '%${pattern}%'" get ProcessId`, { windowsHide: true }).toString();
+      const lines = output.trim().split('\n').slice(1);
+      return lines.map(line => {
+        const trimmed = line.trim();
+        return trimmed ? Number(trimmed) || null : null;
+      }).filter(Boolean);
+    } catch (fallbackError) {
+      return [];
+    }
+  }
+}
+
+function killAllProcessesByPort(port) {
+  const pids = getAllPidsByPort(port);
+  const killed = [];
+
+  for (const pid of pids) {
+    if (killPidTree(pid)) {
+      killed.push(pid);
+    }
+  }
+
+  return killed;
+}
+
+function killProcessesByPattern(pattern) {
+  const pids = getPidsByCommandLine(pattern);
+  const killed = [];
+
+  for (const pid of pids) {
+    if (killPidTree(pid)) {
+      killed.push(pid);
+    }
+  }
+
+  return killed;
 }
 
 function removeServiceRecord(name) {
@@ -297,11 +501,11 @@ function hasLiveServiceProcess(name) {
   if (!record) return false;
 
   const rootPid = getRecordedRootPid(record);
-  if (isPidAlive(rootPid)) {
+  if (isPidOwnedByService(name, rootPid, record.port)) {
     return true;
   }
 
-  if (isPidAlive(Number(record.listenerPid || 0))) {
+  if (isPidOwnedByService(name, Number(record.listenerPid || 0), record.port)) {
     return true;
   }
 
@@ -319,12 +523,36 @@ function startServer(name) {
     };
   }
 
+  if (startingServices.has(name)) {
+    return {
+      ok: false,
+      error: `${service.displayName} is already starting`
+    };
+  }
+
   if (!fs.existsSync(service.args[0])) {
     return {
       ok: false,
       error: `Missing launcher for ${name}: ${service.args[0]}`
     };
   }
+
+  if (hasLiveServiceProcess(name)) {
+    return {
+      ok: true,
+      alreadyRunning: true
+    };
+  }
+
+  const targetPort = service.type === 'queue' ? null : service.port;
+  if (targetPort) {
+    const existingPids = getAllPidsByPort(targetPort);
+    if (existingPids.length > 0) {
+      killAllProcessesByPort(targetPort);
+    }
+  }
+
+  startingServices.add(name);
 
   try {
     const child = cp.spawn(process.execPath, service.args, {
@@ -352,10 +580,15 @@ function startServer(name) {
       void updateRecordedListenerPid(name);
     }, 3000);
 
+    setTimeout(() => {
+      startingServices.delete(name);
+    }, 5000);
+
     return {
       ok: true
     };
   } catch (error) {
+    startingServices.delete(name);
     removeServiceRecord(name);
     return {
       ok: false,
@@ -373,28 +606,71 @@ async function stopServer(name) {
   const rootPid = getRecordedRootPid(record);
   const listenerPid = Number(record && record.listenerPid ? record.listenerPid : 0) || null;
 
-  killPidTree(rootPid);
+  const killedByPid = [];
 
-  if (listenerPid && listenerPid !== rootPid) {
-    killPidTree(listenerPid);
+  if (isPidOwnedByService(name, rootPid, record?.port)) {
+    if (killPidTree(rootPid)) {
+      killedByPid.push(rootPid);
+    }
   }
 
+  if (listenerPid && listenerPid !== rootPid && isPidOwnedByService(name, listenerPid, record?.port)) {
+    if (killPidTree(listenerPid)) {
+      killedByPid.push(listenerPid);
+    }
+  }
+
+  await sleep(500);
+
+  const targetPort = service.type === 'queue'
+    ? (record?.port || (await discoverQueueService(800))?.port || service.port)
+    : service.port;
+
+  if (targetPort) {
+    const killedByPort = killAllProcessesByPort(targetPort);
+    killedByPid.push(...killedByPort.filter(pid => !killedByPid.includes(pid)));
+  }
+
+  await sleep(300);
+
+  const patterns = [];
+  if (name === 'SOLOCoder-QueueServer') {
+    patterns.push('nodemon', 'queue-server');
+  } else if (name === 'SOLOCoder-WebConsole') {
+    patterns.push('vite', 'web-console');
+  }
+
+  for (const pattern of patterns) {
+    const killedByPattern = killProcessesByPattern(pattern);
+    killedByPid.push(...killedByPattern.filter(pid => !killedByPid.includes(pid)));
+  }
+
+  await sleep(300);
+
   if (service.type === 'queue') {
-    const queueTarget = await discoverQueueService(1000);
-    const queuePort = record?.port || queueTarget?.port || null;
-    const liveQueuePid = getPidByPort(queuePort);
-    if (liveQueuePid && liveQueuePid !== rootPid && liveQueuePid !== listenerPid) {
-      killPidTree(liveQueuePid);
+    const finalQueueTarget = await discoverQueueService(500);
+    if (finalQueueTarget) {
+      const finalQueuePid = getPidByPort(finalQueueTarget.port);
+      if (finalQueuePid && !killedByPid.includes(finalQueuePid)) {
+        killPidTree(finalQueuePid);
+        killedByPid.push(finalQueuePid);
+      }
     }
   } else {
-    const livePortPid = getPidByPort(service.port);
-    if (livePortPid && livePortPid !== rootPid && livePortPid !== listenerPid) {
-      killPidTree(livePortPid);
+    const finalPortPid = getPidByPort(service.port);
+    if (finalPortPid && !killedByPid.includes(finalPortPid)) {
+      killPidTree(finalPortPid);
+      killedByPid.push(finalPortPid);
     }
   }
 
   delete pids[name];
   savePids(pids);
+
+  return {
+    killedPids: killedByPid,
+    port: targetPort
+  };
 }
 
 async function getStatus() {
