@@ -1,12 +1,12 @@
 {
   "browser": {
     "browserName": "chromium",
-    "userDataDir": "E:\\workspace\\free-chat-coder\\.browser-profile",
+    "userDataDir": "/mnt/e/workspace/free-chat-coder/.browser-profile",
     "launchOptions": {
-      "executablePath": "D:\\ProgramData\\ms-playwright\\chromium-1217\\chrome-win64\\chrome.exe",
+      "executablePath": "/home/user/.cache/ms-playwright/chromium-1217/chrome-linux64/chrome",
       "args": [
-        "--load-extension=E:\\workspace\\free-chat-coder\\chromevideo",
-        "--disable-extensions-except=E:\\workspace\\free-chat-coder\\chromevideo"
+        "--load-extension=/mnt/e/workspace/free-chat-coder/chromevideo",
+        "--disable-extensions-except=/mnt/e/workspace/free-chat-coder/chromevideo"
       ]
     }
   }

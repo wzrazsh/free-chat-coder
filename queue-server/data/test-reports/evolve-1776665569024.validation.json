@@ -1,0 +1,66 @@
+{
+  "createdAt": "2026-04-20T06:12:49.145Z",
+  "metadata": {
+    "evolutionId": "evolve-1776665569024",
+    "phase": "preflight",
+    "priority": "P0",
+    "targetPath": "/mnt/e/workspace/free-chat-coder/chromevideo/test-dummy-evolve.js"
+  },
+  "analysis": {
+    "context": {
+      "evolutionId": "evolve-1776665569024",
+      "action": "evolve_extension",
+      "riskLevel": "low",
+      "targetPath": "/mnt/e/workspace/free-chat-coder/chromevideo/test-dummy-evolve.js",
+      "phase": "preflight",
+      "historySuccessRate": 0.8
+    },
+    "summary": {
+      "total": 1,
+      "passed": 0,
+      "failed": 1,
+      "skipped": 0,
+      "success": false
+    },
+    "decision": {
+      "action": "fail",
+      "reason": "1 validation check(s) failed"
+    },
+    "confidence": {
+      "score": 0
+    },
+    "recommendations": [
+      "Review /mnt/e/workspace/free-chat-coder/chromevideo/test-dummy-evolve.js: Exited with code 1"
+    ],
+    "checks": [
+      {
+        "name": "syntax:test-dummy-evolve.js",
+        "status": "failed",
+        "duration": 33,
+        "targetPath": "/mnt/e/workspace/free-chat-coder/chromevideo/test-dummy-evolve.js",
+        "command": "/home/user/.nvm/versions/node/v22.12.0/bin/node -c /mnt/e/workspace/free-chat-coder/chromevideo/test-dummy-evolve.js",
+        "stdout": "",
+        "stderr": "node:internal/modules/cjs/loader:1252\n  throw err;\n  ^\n\nError: Cannot find module '/mnt/e/workspace/free-chat-coder/chromevideo/test-dummy-evolve.js'\n    at node:internal/modules/cjs/loader:1249:15\n    at node:internal/main/check_syntax:33:20 {\n  code: 'MODULE_NOT_FOUND',\n  requireStack: []\n}\n\nNode.js v22.12.0",
+        "error": "Exited with code 1",
+        "details": null,
+        "timestamp": "2026-04-20T06:12:49.141Z"
+      }
+    ],
+    "passedChecks": [],
+    "failedChecks": [
+      {
+        "name": "syntax:test-dummy-evolve.js",
+        "status": "failed",
+        "duration": 33,
+        "targetPath": "/mnt/e/workspace/free-chat-coder/chromevideo/test-dummy-evolve.js",
+        "command": "/home/user/.nvm/versions/node/v22.12.0/bin/node -c /mnt/e/workspace/free-chat-coder/chromevideo/test-dummy-evolve.js",
+        "stdout": "",
+        "stderr": "node:internal/modules/cjs/loader:1252\n  throw err;\n  ^\n\nError: Cannot find module '/mnt/e/workspace/free-chat-coder/chromevideo/test-dummy-evolve.js'\n    at node:internal/modules/cjs/loader:1249:15\n    at node:internal/main/check_syntax:33:20 {\n  code: 'MODULE_NOT_FOUND',\n  requireStack: []\n}\n\nNode.js v22.12.0",
+        "error": "Exited with code 1",
+        "details": null,
+        "timestamp": "2026-04-20T06:12:49.141Z"
+      }
+    ],
+    "skippedChecks": []
+  }
+}

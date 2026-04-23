@@ -4,21 +4,33 @@ window.ModelReader = {
    */
   readModelState(params = {}) {
     // DeepSeek 深度思考和联网搜索按钮
-    const deepThinkBtn = window.DOMHelpers ? window.DOMHelpers.findElementByText('.ds-toggle-button, div[role="button"]', '深度思考') : null;
-    const searchBtn = window.DOMHelpers ? window.DOMHelpers.findElementByText('.ds-toggle-button, div[role="button"]', '联网搜索') : null;
-    
+    // 按钮使用 ds-toggle-button 类，点击时内部文字为 "DeepThink" 或 "Search"
+    const allToggles = document.querySelectorAll('.ds-toggle-button');
+
+    let deepThinkBtn = null;
+    let searchBtn = null;
+
+    for (const toggle of allToggles) {
+      const text = toggle.textContent || '';
+      if (text.includes('DeepThink')) {
+        deepThinkBtn = toggle;
+      } else if (text.includes('Search')) {
+        searchBtn = toggle;
+      }
+    }
+
     let deepThinkEnabled = false;
     let searchEnabled = false;
-    
-    // 假设被选中时会带有某个 class 或者 aria-checked="true"
+
+    // 使用 ds-toggle-button--selected 类判断是否选中
     if (deepThinkBtn) {
-      deepThinkEnabled = deepThinkBtn.classList.contains('ds-toggle-button--selected') || deepThinkBtn.getAttribute('aria-checked') === 'true' || deepThinkBtn.style.color.includes('rgb(77, 107, 254)');
+      deepThinkEnabled = deepThinkBtn.classList.contains('ds-toggle-button--selected');
     }
-    
+
     if (searchBtn) {
-      searchEnabled = searchBtn.classList.contains('ds-toggle-button--selected') || searchBtn.getAttribute('aria-checked') === 'true' || searchBtn.style.color.includes('rgb(77, 107, 254)');
+      searchEnabled = searchBtn.classList.contains('ds-toggle-button--selected');
     }
-    
+
     return {
       success: true,
       data: {

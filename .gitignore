@@ -29,3 +29,6 @@ opencode.json
 .workbuddy/autopilot-*.md
 .workbuddy/autopilot-*.log
 .workbuddy/autopilot-*.prompt.md
+.workbuddy/
+recordings
+test-results

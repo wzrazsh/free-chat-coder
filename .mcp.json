@@ -1,24 +1,26 @@
 {
   "mcpServers": {
-    "Playwright": {
-      "command": "npx",
-      "args": [
-        "-y",
-        "@playwright/mcp@latest",
-        "--config",
-        "E:\\workspace\\free-chat-coder\\.playwright-mcp-config.json"
-      ]
-    },
     "omc": {
       "command": "node",
       "args": [
-        "D:/ProgramData/npm/node_modules/oh-my-claude-sisyphus/bridge/mcp-server.cjs"
+        "/home/user/.nvm/versions/node/v22.12.0/lib/node_modules/oh-my-claude-sisyphus/bridge/mcp-server.cjs"
       ]
     },
     "claude-mem": {
       "command": "node",
       "args": [
-        "D:/ProgramData/npm/node_modules/claude-mem/plugin/scripts/mcp-server.cjs"
+        "/home/user/.nvm/versions/node/v22.12.0/lib/node_modules/claude-mem/plugin/scripts/mcp-server.cjs"
+      ]
+    },
+    "playwright": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@playwright/mcp",
+        "--executable-path",
+        "/home/user/.cache/ms-playwright/chromium-1217/chrome-linux64/chrome",
+        "--load-extension",
+        "/mnt/e/workspace/free-chat-coder/chromevideo"
       ]
     }
   }
