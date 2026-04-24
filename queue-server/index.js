@@ -5,6 +5,7 @@ const http = require('http');
 const net = require('net');
 const fs = require('fs');
 const path = require('path');
+const { execFile } = require('child_process');
 const setupWebSocket = require('./websocket/handler');
 const taskRoutes = require('./routes/tasks');
 const conversationRoutes = require('./routes/conversations');
@@ -74,6 +75,38 @@ app.get('/health', (req, res) => {
 app.use('/tasks', taskRoutes);
 app.use('/conversations', conversationRoutes);
 app.use('/evolve', evolutionRoutes);
+
+// Native Host installation endpoint
+app.post('/install-native-host', (req, res) => {
+  const { extensionId } = req.body;
+  if (!extensionId || !/^[a-p]{32}$/.test(extensionId)) {
+    return res.status(400).json({ success: false, error: 'Invalid extension ID (must be 32 chars a-p)' });
+  }
+
+  const installScript = path.resolve(__dirname, '..', 'chromevideo', 'host', 'install_host.js');
+
+  if (!fs.existsSync(installScript)) {
+    return res.status(500).json({ success: false, error: `install_host.js not found at ${installScript}` });
+  }
+
+  execFile(process.execPath, [installScript, '--extension-id', extensionId], { timeout: 30000 }, (error, stdout, stderr) => {
+    if (error) {
+      return res.json({
+        success: false,
+        error: error.message || 'Installation script failed',
+        stdout: (stdout || '').slice(-1000),
+        stderr: (stderr || '').slice(-1000)
+      });
+    }
+
+    res.json({
+      success: true,
+      message: 'Native Host installed successfully',
+      stdout: (stdout || '').slice(-1000),
+      stderr: (stderr || '').slice(-1000)
+    });
+  });
+});
 
 // Create HTTP Server
 const server = http.createServer(app);

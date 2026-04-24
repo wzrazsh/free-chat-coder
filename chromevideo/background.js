@@ -728,6 +728,29 @@ async function checkNativeHostAvailable() {
   return nativeHostAvailable;
 }
 
+async function installNativeHost() {
+  const extensionId = chrome.runtime.id;
+  const target = await getQueueServerTarget(true);
+
+  if (!target) {
+    throw new Error('Queue Server is not running. Please start it first: cd queue-server && npm run dev');
+  }
+
+  const response = await fetchJson(`${target.httpUrl}/install-native-host`, {
+    method: 'POST',
+    body: JSON.stringify({ extensionId })
+  });
+
+  if (!response.success) {
+    throw new Error(response.error || 'Installation script failed');
+  }
+
+  // Reset cache so next heartbeat re-evaluates native host availability
+  nativeHostAvailable = null;
+
+  return { success: true, installOutput: response.stdout || '' };
+}
+
 async function checkQueueServer() {
   try {
     const target = await getQueueServerTarget(true);
@@ -1102,6 +1125,12 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         sendResponse({ available });
       })
       .catch((error) => sendResponse({ available: false, error: error.message }));
+    return true;
+  }
+  else if (msg.type === 'install_native_host') {
+    installNativeHost()
+      .then((result) => sendResponse(result))
+      .catch((error) => sendResponse({ success: false, error: error.message }));
     return true;
   }
   // 状态查询接口

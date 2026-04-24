@@ -284,6 +284,44 @@ document.getElementById('link-evolve-tab').addEventListener('click', () => {
   }
 });
 
+// 一键安装 Native Host
+document.getElementById('install-native-host').addEventListener('click', async () => {
+  const btn = document.getElementById('install-native-host');
+  const resultEl = document.getElementById('install-result');
+
+  btn.disabled = true;
+  btn.textContent = 'Installing...';
+  resultEl.textContent = '';
+  resultEl.style.color = '#6b7280';
+
+  try {
+    const response = await chrome.runtime.sendMessage({ type: 'install_native_host' });
+
+    if (response.success) {
+      resultEl.textContent = 'Installation successful! Reconnecting...';
+      resultEl.style.color = '#10a37f';
+      btn.textContent = 'Installed';
+      btn.disabled = true;
+
+      // 延迟后重新连接 Native Host
+      setTimeout(() => {
+        connectHost();
+        sendCommand('status');
+      }, 1500);
+    } else {
+      resultEl.textContent = `Installation failed: ${response.error}`;
+      resultEl.style.color = '#ef4444';
+      btn.textContent = 'Install Native Host';
+      btn.disabled = false;
+    }
+  } catch (err) {
+    resultEl.textContent = `Installation failed: ${err.message}`;
+    resultEl.style.color = '#ef4444';
+    btn.textContent = 'Install Native Host';
+    btn.disabled = false;
+  }
+});
+
 // 初始化
 workbench = serviceWorkbench.createServiceWorkbench({
   root: 'service-workbench',

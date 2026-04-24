@@ -300,13 +300,7 @@
             <div class="workbench-banner-meta">${escapeHtml(banner.meta)}</div>
           </section>
 
-          <section class="workbench-events-panel">
-            <div class="workbench-section-head">
-              <h5>Recent Events</h5>
-              <span>${escapeHtml(String(state.events.length))} 条</span>
-            </div>
-            <div class="workbench-events">${renderEvents(state.events)}</div>
-          </section>
+
         </div>
       `;
 
