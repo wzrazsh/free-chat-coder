@@ -894,7 +894,7 @@ workbench.load().catch((error) => {
   console.warn('[SidePanel] Failed to load service workbench:', error.message || error);
 });
 connectHost();
-refreshBootstrapStatus();
+refreshBootstrapStatus(true);
 fetchPendingConfirms();
 loadEvolveState().then(() => {
   fetchExtensionConversations().then(() => {

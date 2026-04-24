@@ -345,7 +345,7 @@ window.addEventListener('unload', () => {
   workbench?.destroy();
 });
 connectHost();
-refreshBootstrapStatus();
+refreshBootstrapStatus(true);
 loadEvolveState().then(() => {
   if (port) {
     sendCommand('status');
