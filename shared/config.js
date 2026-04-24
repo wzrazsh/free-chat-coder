@@ -25,7 +25,14 @@ const buildQueuePortCandidates = (preferredPort) => {
 const queuePreferredPort = getEnvNumber('QUEUE_PORT', getEnvNumber('PORT', DEFAULT_QUEUE_PORT));
 const webIdePort = getEnvNumber('WEB_IDE_PORT', DEFAULT_WEB_IDE_PORT);
 
+const features = {
+  enableAutoEvolve: getEnv('FCC_ENABLE_AUTO_EVOLVE', 'false').toLowerCase() === 'true',
+  enableEvolveApi: getEnv('FCC_ENABLE_EVOLVE_API', 'false').toLowerCase() === 'true'
+};
+
 const config = {
+  features,
+
   queueServer: {
     host: getEnv('QUEUE_HOST', '127.0.0.1'),
     serviceName: 'free-chat-coder-queue-server',

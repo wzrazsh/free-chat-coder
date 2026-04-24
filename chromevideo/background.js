@@ -55,13 +55,23 @@ chrome.alarms.onAlarm.addListener((alarm) => {
   }
 });
 
-// 导入自动进化监控模块
+// 导入基础配置模块
 try {
-  importScripts('auto-evolve-monitor.js');
   importScripts('utils/queue-config.js');
-  console.log('[SW] Auto-evolve monitor loaded');
 } catch (error) {
-  console.error('[SW] Failed to load auto-evolve monitor:', error);
+  console.error('[SW] Failed to load queue-config:', error);
+}
+
+// 条件导入自动进化监控模块
+if (typeof queueConfig !== 'undefined' && queueConfig.features && queueConfig.features.enableAutoEvolve) {
+  try {
+    importScripts('auto-evolve-monitor.js');
+    console.log('[SW] Auto-evolve monitor loaded');
+  } catch (error) {
+    console.error('[SW] Failed to load auto-evolve monitor:', error);
+  }
+} else {
+  console.log('[SW] Auto-evolve monitor skipped (feature disabled)');
 }
 
 // 维护当前任务 ID
@@ -321,6 +331,11 @@ class AutoEvolveController {
    * 启动主动进化
    */
   async start(sessionId, direction, deepseekTabId) {
+    if (!(typeof queueConfig !== 'undefined' && queueConfig.features && queueConfig.features.enableAutoEvolve)) {
+      console.log('[AEC] Auto-evolve is disabled');
+      return { success: false, message: 'Auto-evolve is disabled' };
+    }
+
     if (this.active) {
       console.log('[AEC] Already active');
       return { success: false, message: 'Already active' };
@@ -1078,9 +1093,14 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     console.log('[SW] Reloading extension by server request...');
     chrome.runtime.reload();
   } else if (msg.type === 'auto_evolve') {
-    console.log('[SW] Auto-evolve request received:', msg.errorType);
-    forwardAutoEvolveRequest(msg);
-    sendResponse({ received: true });
+    if (typeof queueConfig !== 'undefined' && queueConfig.features && queueConfig.features.enableAutoEvolve) {
+      console.log('[SW] Auto-evolve request received:', msg.errorType);
+      forwardAutoEvolveRequest(msg);
+      sendResponse({ received: true });
+    } else {
+      console.log('[SW] Auto-evolve request ignored (feature disabled)');
+      sendResponse({ received: false, error: 'Auto-evolve is disabled' });
+    }
   } else if (msg.type === 'content_script_error') {
     console.log('[SW] Content script error received:', msg.errorType);
     if (typeof autoEvolveMonitor !== 'undefined' && autoEvolveMonitor.recordError) {
@@ -1099,8 +1119,12 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   }
   // 主动进化控制消息
   else if (msg.type === 'start_auto_evolve') {
-    autoEvolveController.start(msg.sessionId, msg.direction, msg.deepseekTabId)
-      .then((result) => sendResponse(result));
+    if (typeof queueConfig !== 'undefined' && queueConfig.features && queueConfig.features.enableAutoEvolve) {
+      autoEvolveController.start(msg.sessionId, msg.direction, msg.deepseekTabId)
+        .then((result) => sendResponse(result));
+    } else {
+      sendResponse({ success: false, message: 'Auto-evolve is disabled' });
+    }
     return true; // 异步响应
   }
   else if (msg.type === 'stop_auto_evolve') {
@@ -1108,8 +1132,12 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     sendResponse({ success: true });
   }
   else if (msg.type === 'resume_auto_evolve') {
-    autoEvolveController.resume(msg.sessionId, msg.direction, msg.deepseekTabId)
-      .then((result) => sendResponse(result));
+    if (typeof queueConfig !== 'undefined' && queueConfig.features && queueConfig.features.enableAutoEvolve) {
+      autoEvolveController.resume(msg.sessionId, msg.direction, msg.deepseekTabId)
+        .then((result) => sendResponse(result));
+    } else {
+      sendResponse({ success: false, message: 'Auto-evolve is disabled' });
+    }
     return true; // 异步响应
   }
   else if (msg.type === 'start_extension_conversation') {

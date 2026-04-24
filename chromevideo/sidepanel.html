@@ -892,23 +892,23 @@
     <div class="settings-body">
       <div id="service-workbench"></div>
 
-      <!-- 自动进化 -->
-      <div class="s-card evolve">
+      <!-- 自动进化 (已冻结) -->
+      <div class="s-card evolve" style="opacity:0.5;pointer-events:none;">
         <div class="s-card-head">
           <h4>🔮 自动进化</h4>
         </div>
-        <textarea id="evolve-direction" class="evolve-textarea" placeholder="输入进化方向，例如：优化 WebSocket 重连逻辑..."></textarea>
+        <textarea id="evolve-direction" class="evolve-textarea" placeholder="输入进化方向，例如：优化 WebSocket 重连逻辑..." disabled></textarea>
         <div class="evolve-session" id="evolve-session" style="display:none;">
           <span class="session-badge" id="session-badge">会话</span>
           <span id="session-info" style="font-size:11px;color:var(--text-muted);"></span>
         </div>
         <div style="margin-top:10px;">
-          <button class="btn btn-evolve" id="start-evolve">▶ 开始进化</button>
-          <button class="btn btn-stop" id="stop-evolve" style="display:none;">■ 停止</button>
-          <button class="btn btn-link" id="link-evolve-tab" style="display:none;">查看对话</button>
+          <button class="btn btn-evolve" id="start-evolve" disabled>▶ 开始进化</button>
+          <button class="btn btn-stop" id="stop-evolve" style="display:none;" disabled>■ 停止</button>
+          <button class="btn btn-link" id="link-evolve-tab" style="display:none;" disabled>查看对话</button>
         </div>
         <div class="evolve-status" id="evolve-status">
-          <span id="evolve-status-text">点击"开始进化"启动主动进化模式</span>
+          <span id="evolve-status-text">自动进化功能已冻结</span>
         </div>
       </div>
 

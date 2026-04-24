@@ -846,6 +846,11 @@ function updateEvolveUI() {
 }
 
 async function startAutoEvolve() {
+  if (!(typeof queueConfig !== 'undefined' && queueConfig.features && queueConfig.features.enableAutoEvolve)) {
+    addLogMessage('system', '⛔ 自动进化已冻结');
+    return;
+  }
+
   const direction = document.getElementById('evolve-direction').value.trim();
   if (!direction) {
     alert('请输入进化方向');

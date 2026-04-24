@@ -7,6 +7,7 @@ const { selfDiagnosis } = require('../evolution/self-diagnosis');
 const { evolutionHistory } = require('../evolution/evolution-history');
 const conversationStore = require('../conversations/store');
 const providerRegistry = require('../providers');
+const sharedConfig = require('../../shared/config');
 
 const confirmManager = require('../actions/confirm-manager');
 
@@ -478,84 +479,95 @@ function setupWebSocket(server) {
           });
         }
         
-        // 处理扩展自动发起的进化请求
+        // 处理扩展自动发起的进化请求 (FROZEN)
         else if (data.type === 'auto_evolve') {
-          console.log(`[WS] Auto-evolve request received: ${data.errorType}`);
+          if (sharedConfig.features && sharedConfig.features.enableAutoEvolve) {
+            console.log(`[WS] Auto-evolve request received: ${data.errorType}`);
 
-          try {
-            // 使用进化策略管理器检查是否允许进化
-            const evolutionCheck = autoEvolveManager.shouldAllowEvolution(data.errorType, data);
+            try {
+              // 使用进化策略管理器检查是否允许进化
+              const evolutionCheck = autoEvolveManager.shouldAllowEvolution(data.errorType, data);
 
-            if (!evolutionCheck.allowed) {
-              console.log(`[WS] Evolution not allowed: ${evolutionCheck.reason}`);
+              if (!evolutionCheck.allowed) {
+                console.log(`[WS] Evolution not allowed: ${evolutionCheck.reason}`);
 
-              // 通知扩展进化被限制
-              if (extensionClients.has(ws)) {
-                ws.send(JSON.stringify({
-                  type: 'evolution_rate_limited',
-                  errorType: data.errorType,
-                  message: evolutionCheck.reason || 'Evolution not allowed at this time.',
-                  priority: evolutionCheck.priority,
-                  riskLevel: evolutionCheck.riskLevel
-                }));
+                // 通知扩展进化被限制
+                if (extensionClients.has(ws)) {
+                  ws.send(JSON.stringify({
+                    type: 'evolution_rate_limited',
+                    errorType: data.errorType,
+                    message: evolutionCheck.reason || 'Evolution not allowed at this time.',
+                    priority: evolutionCheck.priority,
+                    riskLevel: evolutionCheck.riskLevel
+                  }));
+                }
+                return;
               }
-              return;
-            }
 
-            // 生成诊断报告
-            const diagnosisReport = selfDiagnosis.analyzeError(data);
+              // 生成诊断报告
+              const diagnosisReport = selfDiagnosis.analyzeError(data);
 
-            // 记录进化请求到历史
-            const evolutionId = autoEvolveManager.recordEvolutionRequest(data);
-            evolutionHistory.recordEvolution({
-              id: evolutionId,
-              errorType: data.errorType,
-              actionType: 'auto_evolve',
-              priority: evolutionCheck.priority,
-              riskLevel: evolutionCheck.riskLevel,
-              details: data.details || {},
-              timestamp: data.timestamp || Date.now()
-            });
-
-            // 获取进化建议
-            const evolutionAdvice = autoEvolveManager.getEvolutionAdvice(data.errorType, data.details);
-
-            // 根据错误类型生成智能提示（使用诊断报告增强）
-            const prompt = generateEvolutionPrompt(data, diagnosisReport, evolutionAdvice);
-
-            // 确定任务优先级（从管理器获取）
-            const priority = evolutionCheck.priority;
-
-            // 自动创建一个新任务放到队列头部
-            const task = queueManager.addTask(prompt, {
-              autoEvolve: true,
-              fallbackProvider: 'extension-dom',
-              skipSystemInstruction: false,
-              maxRounds: data.maxRounds || 5,
-              priority: priority,
-              evolutionRequest: {
+              // 记录进化请求到历史
+              const evolutionId = autoEvolveManager.recordEvolutionRequest(data);
+              evolutionHistory.recordEvolution({
                 id: evolutionId,
                 errorType: data.errorType,
-                errorMessage: data.errorMessage,
-                location: data.location,
-                timestamp: data.timestamp || new Date().toISOString(),
+                actionType: 'auto_evolve',
+                priority: evolutionCheck.priority,
+                riskLevel: evolutionCheck.riskLevel,
                 details: data.details || {},
-                diagnosis: diagnosisReport,
-                advice: evolutionAdvice
+                timestamp: data.timestamp || Date.now()
+              });
+
+              // 获取进化建议
+              const evolutionAdvice = autoEvolveManager.getEvolutionAdvice(data.errorType, data.details);
+
+              // 根据错误类型生成智能提示（使用诊断报告增强）
+              const prompt = generateEvolutionPrompt(data, diagnosisReport, evolutionAdvice);
+
+              // 确定任务优先级（从管理器获取）
+              const priority = evolutionCheck.priority;
+
+              // 自动创建一个新任务放到队列头部
+              const task = queueManager.addTask(prompt, {
+                autoEvolve: true,
+                fallbackProvider: 'extension-dom',
+                skipSystemInstruction: false,
+                maxRounds: data.maxRounds || 5,
+                priority: priority,
+                evolutionRequest: {
+                  id: evolutionId,
+                  errorType: data.errorType,
+                  errorMessage: data.errorMessage,
+                  location: data.location,
+                  timestamp: data.timestamp || new Date().toISOString(),
+                  details: data.details || {},
+                  diagnosis: diagnosisReport,
+                  advice: evolutionAdvice
+                }
+              });
+
+              console.log(`[WS] Auto-evolve task created: ${task.id}, priority: ${priority}, risk: ${evolutionCheck.riskLevel}`);
+
+              broadcastToWeb({ type: 'task_update', task });
+              assignNextTask();
+            } catch (evolveErr) {
+              console.error('[WS] Auto-evolve processing error:', evolveErr);
+              if (extensionClients.has(ws)) {
+                ws.send(JSON.stringify({
+                  type: 'evolution_error',
+                  errorType: data.errorType,
+                  message: 'Internal error processing auto_evolve request.'
+                }));
               }
-            });
-
-            console.log(`[WS] Auto-evolve task created: ${task.id}, priority: ${priority}, risk: ${evolutionCheck.riskLevel}`);
-
-            broadcastToWeb({ type: 'task_update', task });
-            assignNextTask();
-          } catch (evolveErr) {
-            console.error('[WS] Auto-evolve processing error:', evolveErr);
+            }
+          } else {
+            console.log(`[WS] Auto-evolve request ignored (feature disabled): ${data.errorType}`);
             if (extensionClients.has(ws)) {
               ws.send(JSON.stringify({
-                type: 'evolution_error',
+                type: 'evolution_disabled',
                 errorType: data.errorType,
-                message: 'Internal error processing auto_evolve request.'
+                message: 'Auto-evolve is disabled by configuration.'
               }));
             }
           }
