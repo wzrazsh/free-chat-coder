@@ -18,6 +18,8 @@ queue-server/data/chat-state.db
 queue-server/data/chat-state.db-shm
 queue-server/data/chat-state.db-wal
 queue-server/data/deepseek-web-auth.json
+queue-server/data/tasks.json
+queue-server/data/evolution-history.json
 CODEBUDDY.md
 .playwright-mcp-config.json
 .mcp.json

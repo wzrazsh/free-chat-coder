@@ -321,13 +321,24 @@ async function activateConversationFromUi(conversationId) {
   });
 }
 
+// 新建对话（带并发保护）
+let isCreatingConversation = false;
+
 function createNewConversationFromUi() {
+  if (isCreatingConversation) {
+    addLogMessage('system', '⚠️ 正在创建会话，请稍候...');
+    return;
+  }
+  
+  isCreatingConversation = true;
   resetLogArea();
   clearAttachments();
   showTyping();
+  
   chrome.runtime.sendMessage(
     { type: 'start_extension_conversation', modeProfile: selectedModeProfile },
     async (response) => {
+    isCreatingConversation = false;
     hideTyping();
 
     if (chrome.runtime.lastError) {
@@ -341,6 +352,7 @@ function createNewConversationFromUi() {
     }
 
     activeConversationId = response.conversation?.id || null;
+    addLogMessage('system', `✅ 新建${selectedModeProfile === 'quick' ? '快速' : '专家'}模式会话成功`);
     await fetchExtensionConversations(activeConversationId);
     await loadConversationMessages(activeConversationId);
   });
@@ -402,14 +414,62 @@ async function deleteConversationFromUi(conversationId) {
   }
 }
 
-// Mode selector
+// Mode selector with concurrency handling
+let isModeSwitching = false;
+let modeSwitchAbortController = null;
+
 document.querySelectorAll('.mode-option').forEach((btn) => {
-  btn.addEventListener('click', () => {
+  btn.addEventListener('click', async () => {
+    const newMode = btn.dataset.mode;
+    if (isModeSwitching || selectedModeProfile === newMode) return;
+    
+    isModeSwitching = true;
+    modeSwitchAbortController = new AbortController();
+    
+    btn.classList.add('switching');
     document.querySelectorAll('.mode-option').forEach((b) => b.classList.remove('active'));
     btn.classList.add('active');
-    selectedModeProfile = btn.dataset.mode;
+    
+    try {
+      addLogMessage('system', `🔄 切换到${newMode === 'quick' ? '快速' : '专家'}模式...`);
+      
+      const tabId = await getDeepSeekTabId();
+      if (!tabId) {
+        selectedModeProfile = newMode;
+        addLogMessage('system', `✅ 已切换到${newMode === 'quick' ? '快速' : '专家'}模式`);
+        return;
+      }
+      
+      const response = await chrome.tabs.sendMessage(tabId, {
+        action: 'setModeProfile',
+        params: { profile: newMode }
+      });
+      
+      if (response && response.success) {
+        selectedModeProfile = newMode;
+        addLogMessage('system', `✅ 已切换到${newMode === 'quick' ? '快速' : '专家'}模式`);
+      } else {
+        throw new Error(response?.error || '模式切换失败');
+      }
+    } catch (error) {
+      if (error.name === 'AbortError') return;
+      console.error('[ModeSwitch] Error:', error);
+      btn.classList.remove('active');
+      const prevBtn = document.querySelector(`.mode-option[data-mode="${selectedModeProfile}"]`);
+      if (prevBtn) prevBtn.classList.add('active');
+      addLogMessage('system', `❌ 模式切换失败: ${error.message || '未知错误'}`);
+    } finally {
+      setTimeout(() => btn.classList.remove('switching'), 300);
+      isModeSwitching = false;
+      modeSwitchAbortController = null;
+    }
   });
 });
+
+async function getDeepSeekTabId() {
+  const tabs = await chrome.tabs.query({ url: 'https://chat.deepseek.com/*' });
+  return tabs.length > 0 ? tabs[0].id : null;
+}
 
 // File upload
 document.getElementById('btn-attach')?.addEventListener('click', () => {
@@ -704,6 +764,32 @@ function updateConnectionUI(connected) {
 }
 
 // ══════════════════════════════════════════
+//  模式同步
+// ══════════════════════════════════════════
+
+async function syncModeProfileFromDeepSeek() {
+  try {
+    const tabId = await getDeepSeekTabId();
+    if (!tabId) return false;
+    
+    const response = await chrome.tabs.sendMessage(tabId, { action: 'readModeProfile' });
+    if (response && response.success && response.data && response.data.profile) {
+      const profile = response.data.profile;
+      if (profile !== 'unknown' && profile !== selectedModeProfile) {
+        selectedModeProfile = profile;
+        document.querySelectorAll('.mode-option').forEach((btn) => {
+          btn.classList.toggle('active', btn.dataset.mode === profile);
+        });
+        console.log('[ModeSync] Synced mode from DeepSeek:', profile);
+        return true;
+      }
+    }
+  } catch (error) {
+    console.log('[ModeSync] Could not sync mode:', error.message || error);
+  }
+  return false;
+}
+
 //  进化状态
 // ══════════════════════════════════════════
 
@@ -1059,10 +1145,12 @@ connectHost();
 refreshBootstrapStatus(true);
 fetchPendingConfirms();
 loadEvolveState().then(() => {
-  fetchExtensionConversations().then(() => {
-    if (activeConversationId) {
-      loadConversationMessages(activeConversationId);
-    }
+  syncModeProfileFromDeepSeek().then(() => {
+    fetchExtensionConversations().then(() => {
+      if (activeConversationId) {
+        loadConversationMessages(activeConversationId);
+      }
+    });
   });
 
   if (port) {
@@ -1074,8 +1162,12 @@ loadEvolveState().then(() => {
     if (port) {
       sendCommand('status');
     }
-    // host 断开时不自动检测，保留最后已知状态
   }, 3000);
+
+  // 模式同步：定期从 DeepSeek 页面同步当前模式状态
+  setInterval(() => {
+    syncModeProfileFromDeepSeek();
+  }, 5000);
 
   confirmPollInterval = setInterval(() => {
     fetchPendingConfirms();

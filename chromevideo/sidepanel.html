@@ -485,8 +485,26 @@
       background: var(--bg-card);
       color: var(--text-muted);
       cursor: pointer;
-      transition: all 0.15s;
+      transition: all 0.2s ease;
       font-family: inherit;
+      position: relative;
+      overflow: hidden;
+    }
+    .mode-option::after {
+      content: '';
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      width: 0;
+      height: 0;
+      background: rgba(255, 255, 255, 0.3);
+      border-radius: 50%;
+      transform: translate(-50%, -50%);
+      transition: width 0.3s, height 0.3s;
+    }
+    .mode-option:active::after {
+      width: 100px;
+      height: 100px;
     }
     .mode-option:not(:last-child) {
       border-right: 1px solid var(--border);
@@ -494,10 +512,19 @@
     .mode-option.active {
       background: var(--accent);
       color: #fff;
+      box-shadow: 0 0 8px rgba(77, 107, 254, 0.4);
     }
     .mode-option:hover:not(.active) {
       background: var(--bg-card-hover);
       color: var(--text-primary);
+    }
+    .mode-option.switching {
+      animation: modeSwitch 0.3s ease;
+    }
+    @keyframes modeSwitch {
+      0% { transform: scale(1); }
+      50% { transform: scale(0.95); }
+      100% { transform: scale(1); }
     }
 
     /* ── Attachment styles ── */
