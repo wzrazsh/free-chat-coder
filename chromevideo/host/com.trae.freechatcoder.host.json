@@ -1,9 +1,9 @@
 {
   "name": "com.trae.freechatcoder.host",
   "description": "SOLO Coder Local Server Host",
-  "path": "host.bat",
+  "path": "E:\\AIwork\\free-chat-coder\\chromevideo\\host\\host.bat",
   "type": "stdio",
   "allowed_origins": [
-    "chrome-extension://fpiggepgljafdfddlpelhfdbckkbdijb/"
+    "chrome-extension://jmmefgkdghkccbilefnffejjgienappp/"
   ]
 }

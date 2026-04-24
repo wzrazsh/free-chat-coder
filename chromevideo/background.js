@@ -6,6 +6,25 @@ chrome.sidePanel
   .setPanelBehavior({ openPanelOnActionClick: true })
   .catch((err) => console.error('[SW] Failed to set sidePanel behavior:', err));
 
+// ── Keep-Alive Alarm：防止 MV3 Service Worker 休眠 ──
+// MV3 SW 在闲置 30 秒后会休眠，导致 "Receiving end does not exist" 错误
+const KEEP_ALIVE_ALARM_NAME = 'solo-coder-keep-alive';
+const KEEP_ALIVE_INTERVAL_MINUTES = 0.4; // 24 秒 (< 30 秒休眠阈值)
+
+chrome.runtime.onInstalled.addListener(() => {
+  chrome.alarms.create(KEEP_ALIVE_ALARM_NAME, {
+    periodInMinutes: KEEP_ALIVE_INTERVAL_MINUTES
+  });
+  console.log('[SW] Keep-alive alarm created');
+});
+
+chrome.alarms.onAlarm.addListener((alarm) => {
+  if (alarm.name === KEEP_ALIVE_ALARM_NAME) {
+    // 轻量级操作，保持 SW 活跃
+    console.log('[SW] Keep-alive ping at', new Date().toISOString());
+  }
+});
+
 // 导入自动进化监控模块
 try {
   importScripts('auto-evolve-monitor.js');
