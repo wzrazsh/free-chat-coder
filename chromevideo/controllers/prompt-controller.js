@@ -19,16 +19,6 @@ window.PromptController = {
     // 3. 查找输入框
     const input = document.querySelector('#chat-input') || document.querySelector('textarea[placeholder*="message"]') || document.querySelector('textarea');
     if (!input) {
-      // 找不到输入框，发送自动进化信号给 SW
-      if (chrome && chrome.runtime && chrome.runtime.sendMessage) {
-        chrome.runtime.sendMessage({
-          type: 'auto_evolve',
-          errorType: 'selector_failed',
-          errorMessage: 'Could not find the chat textarea on the page',
-          location: 'chromevideo/controllers/prompt-controller.js',
-          currentCode: 'const input = document.querySelector(\'#chat-input\') || ...'
-        });
-      }
       throw new Error('InputAreaNotFound: Could not find the chat textarea on the page');
     }
 

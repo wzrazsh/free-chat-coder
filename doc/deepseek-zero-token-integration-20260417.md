@@ -1,3 +1,5 @@
+> Deprecated: 本文档描述的是 2026-04-25 前的自动进化/自修改路线，已从当前主线中移除。当前路线以 `doc/refactor-prune-plan-20260425.md` 和 `doc/refactor-prune-plan-20260425-v1.md` 为准。
+
 # DeepSeek Web Zero-Token 接入方案
 
 更新日期：2026-04-17

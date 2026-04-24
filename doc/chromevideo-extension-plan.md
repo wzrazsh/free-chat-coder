@@ -1,3 +1,5 @@
+> Deprecated: 本文档描述的是 2026-04-25 前的自动进化/自修改路线，已从当前主线中移除。当前路线以 `doc/refactor-prune-plan-20260425.md` 和 `doc/refactor-prune-plan-20260425-v1.md` 为准。
+
 # ChromeVideo 扩展功能规划 - DeepSeek 自动化代理桥
 
 | 文档版本 | 日期 | 作者 | 变更说明 |

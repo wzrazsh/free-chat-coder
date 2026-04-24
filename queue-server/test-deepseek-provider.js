@@ -132,8 +132,8 @@ async function main() {
     assert.strictEqual(authInspection.storePath, storePath);
 
     assert.strictEqual(providerRegistry.getTaskProvider({ options: {} }), 'extension-dom');
-    assert.strictEqual(providerRegistry.getTaskProvider({ options: { autoEvolve: true } }), 'deepseek-web');
     assert.strictEqual(providerRegistry.getTaskProvider({ options: { provider: 'deepseek-web' } }), 'deepseek-web');
+    assert.strictEqual(providerRegistry.getTaskProvider({ options: { autoEvolve: true } }), 'extension-dom');
     assert.strictEqual(
       providerRegistry.canDispatchTask({ options: { provider: 'extension-dom' } }, { extensionAvailable: false }),
       false
@@ -143,7 +143,7 @@ async function main() {
         { options: { autoEvolve: true } },
         { extensionAvailable: false, deepseekWebBusy: false }
       ),
-      true
+      false
     );
     assert.strictEqual(
       providerRegistry.canDispatchTask(

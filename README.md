@@ -1,6 +1,6 @@
 # free-chat-coder
 
-`free-chat-coder` 是一个围绕 **DeepSeek** 构建的本地 AI 辅助开发工具集。它把浏览器扩展、任务队列服务、Web 控制台和可选的 Web IDE 整合在一起，让你可以在本地调度 AI 任务、自动推进代码演进、并在需要时人工确认。
+`free-chat-coder` 是一个围绕 **DeepSeek** 构建的本地 AI 辅助开发工具集。它把浏览器扩展、任务队列服务、Web 控制台和可选的 Web IDE 整合在一起，让你可以在本地调度 AI 任务、管理聊天会话，并在需要时进行人工确认。
 
 核心设计思路：**文本任务走服务端直连**，**浏览器动作走扩展 DOM**，两条链路互补，降低对页面结构变化的脆弱依赖。
 
@@ -11,13 +11,10 @@
 - **双通道任务执行**
   - `deepseek-web`：Queue Server 内直接请求 DeepSeek Web 内部接口，无需操控页面 DOM。
   - `extension-dom`：Chrome 扩展在 DeepSeek 页面内执行输入、发送、截图、上传、会话切换等动作。
-- **自动进化（Auto Evolve）**
-  - 定时任务自动分析代码、生成修改计划、执行变更，并支持失败回退。
-  - 默认优先使用 `deepseek-web` 通道，失败时自动回退到 `extension-dom`。
 - **本地任务队列**
   - Express + WebSocket 后端，负责任务排队、会话同步、审批流与热重载。
 - **Web 控制台**
-  - Vite + React 前端，查看任务状态、审批操作、浏览扩展会话、编辑 `custom-handler.js`。
+  - Vite + React 前端，查看任务状态、审批操作、浏览扩展会话。
 - **Chrome 扩展（DeepSeek Agent Bridge）**
   - Side Panel、Popup、Offscreen WebSocket、Native Messaging Host。
   - 访问 DeepSeek 页面时自动唤起 Side Panel，支持页面读写、截图、附件上传。
@@ -34,23 +31,23 @@
 │  (Vite+React)   │                        │  (Express+WS)   │
 │   Port 5173     │                        │  Port 8080~8090 │
 └─────────────────┘                        └────────┬────────┘
-                                                    │
+                                                     │
                        ┌────────────────────────────┼────────────────────────────┐
                        │                            │                            │
               ┌────────▼────────┐          ┌────────▼────────┐          ┌────────▼────────┐
-              │  deepseek-web   │          │ extension-dom   │          │   auto_evolve   │
-              │   Provider      │          │   Provider      │          │   (默认deepseek)│
-              │  (服务端直连)    │          │  (Chrome扩展)    │          │  (失败回退DOM)  │
-              └─────────────────┘          └────────┬────────┘          └─────────────────┘
+              │  deepseek-web   │          │ extension-dom   │          │   (reserved)    │
+              │   Provider      │          │   Provider      │          │                 │
+              │  (服务端直连)    │          │  (Chrome扩展)    │          │                 │
+              └─────────────────┘          └─────────────────┘          └─────────────────┘
                                                     │
-                              Native Messaging      │     content scripts / offscreen
-                              ┌─────────────────────┘
-                              │
-                    ┌─────────▼──────────┐
-                    │   Chrome Extension  │
-                    │  (DeepSeek Agent    │
-                    │     Bridge)         │
-                    └─────────────────────┘
+                          Native Messaging      │     content scripts / offscreen
+                          ┌─────────────────────┘
+                          │
+                ┌─────────▼──────────┐
+                │   Chrome Extension  │
+                │  (DeepSeek Agent    │
+                │     Bridge)         │
+                └─────────────────────┘
 ```
 
 ### 目录说明
@@ -244,26 +241,6 @@ cd web-console && npm run build
 
 - Web Console 能正常连接到 Queue Server
 - Chrome 扩展能收到任务并回传结果
-- `/evolve` 保存后，`nodemon` 能自动重启后端
-
----
-
-## 定时开发任务（可选）
-
-如果希望用本机定时任务持续推进开发并执行夜间验证：
-
-```bash
-./scripts/install-dev-cron.sh
-```
-
-安装后创建两类任务：
-
-- **每 5 分钟**：自动开发主管，检查当前任务是否运行或卡死，空闲时自动拉起新的 `codex exec`
-- **每天凌晨 2:20**：生成 `.workbuddy/auto-nightly-validation.md`
-
-自动开发主管状态保存在 `.workbuddy/autopilot-state.json`，最近一次模型输出保存在 `.workbuddy/autopilot-last-message.md`。
-
-默认每轮新任务以全新会话启动，避免历史对话污染；只有在故障恢复或明确延续修复时，才会带入上一轮日志。实际优先级以 `doc/project-roadmap-20260417.md` 为准。
 
 ---
 

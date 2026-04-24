@@ -1,8 +1,5 @@
 // /workspace/chromevideo/offscreen.js
 
-// 自动进化监控模块已在 offscreen.html 中通过 <script> 标签加载
-console.log('[Offscreen] Auto-evolve monitor should be loaded via HTML');
-
 let ws;
 let reconnectInterval;
 let currentWsUrl = null;
@@ -19,11 +16,6 @@ async function connect(forceDiscovery = false) {
 
     console.log(`[Offscreen] Attempting to connect to WS on port ${queueTarget.port}...`);
     ws = new WebSocket(queueTarget.wsUrl);
-
-    // 监控WebSocket连接错误
-    if (typeof autoEvolveMonitor !== 'undefined' && autoEvolveMonitor.monitorWebSocket) {
-      autoEvolveMonitor.monitorWebSocket(ws);
-    }
 
     ws.onopen = () => {
       console.log(`[Offscreen] Connected to Queue-Server on ${currentWsUrl}`);
@@ -100,7 +92,7 @@ void connect();
 
 // Receive messages from Service Worker (like task updates) and forward to server
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
-  if (msg.type === 'task_update' || msg.type === 'auto_evolve') {
+  if (msg.type === 'task_update') {
     if (ws && ws.readyState === WebSocket.OPEN) {
       console.log(`[Offscreen] Forwarding ${msg.type} to server:`, msg);
       ws.send(JSON.stringify(msg));
@@ -135,16 +127,12 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   // 新增：状态查询接口
   if (msg.type === 'get_extension_status') {
     const status = {
-      wsReadyState: ws ? ws.readyState : -1,   // 0: CONNECTING, 1: OPEN, 2: CLOSING, 3: CLOSED
+      wsReadyState: ws ? ws.readyState : -1,
       wsUrl: currentWsUrl,
       lastHeartbeat: lastHeartbeatTime,
       isTaskRunning: !!currentTaskId,
       currentTaskId: currentTaskId || null,
-      uptime: Date.now() - startTime,
-      // 如果 autoEvolveMonitor 存在，获取其统计信息
-      errorStats: (typeof autoEvolveMonitor !== 'undefined' && autoEvolveMonitor.getStats) 
-                  ? autoEvolveMonitor.getStats() 
-                  : null
+      uptime: Date.now() - startTime
     };
     sendResponse(status);
     return true;
