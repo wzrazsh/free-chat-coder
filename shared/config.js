@@ -26,6 +26,7 @@ const queuePreferredPort = getEnvNumber('QUEUE_PORT', getEnvNumber('PORT', DEFAU
 const webIdePort = getEnvNumber('WEB_IDE_PORT', DEFAULT_WEB_IDE_PORT);
 
 const features = {
+  // Auto-evolve features permanently disabled (Phase 1 prune).
   enableAutoEvolve: getEnv('FCC_ENABLE_AUTO_EVOLVE', 'false').toLowerCase() === 'true',
   enableEvolveApi: getEnv('FCC_ENABLE_EVOLVE_API', 'false').toLowerCase() === 'true'
 };

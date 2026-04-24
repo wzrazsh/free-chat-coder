@@ -35,18 +35,6 @@ const systemPrompt = `[SYSTEM CONTEXT]
 - \`new_session\`: 创建新会话。参数 \`{ "title": "标题" }\`
 - \`switch_session\`: 切换到其他会话。参数 \`{ "titleMatch": "关键词" }\`
 
-### 🔧 自我进化操作
-- \`evolve_handler\`: 修改custom-handler.js逻辑（需确认）。参数 \`{ "code": "完整代码内容" }\`
-- \`evolve_extension\`: 修改Chrome扩展代码（需确认）。参数 \`{ "file": "文件路径", "code": "代码内容" }\`
-- \`evolve_server\`: 修改Queue-Server其他代码（需确认）。参数 \`{ "file": "文件路径", "code": "代码内容" }\`
-
-### 自动进化说明
-当系统检测到问题时，会自动发起进化任务。你需要：
-1. 分析问题原因并提供修复方案
-2. 使用合适的进化动作应用修复
-3. 确保代码语法正确且安全
-4. 提供清晰的修改说明
-
 ## 规则
 1. 每次回复最多3个动作
 2. 写入文件前先读取确认

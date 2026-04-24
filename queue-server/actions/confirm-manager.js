@@ -2,20 +2,12 @@
  * 管理需要用户确认的危险动作
  *
  * 审批优先级：
- *   1. 自动进化任务（options.autoEvolve === true）→ 自动批准
- *   2. AUTO_CONFIRM=true 环境变量 → 全部自动批准（仅用于开发测试）
- *   3. 其余情况 → 通过 WebSocket 推送到 Web 控制台弹窗，3 分钟超时拒绝
+ *   1. AUTO_CONFIRM=true 环境变量 → 全部自动批准（仅用于开发测试）
+ *   2. 其余情况 → 通过 WebSocket 推送到 Web 控制台弹窗，3 分钟超时拒绝
  */
 class ConfirmManager {
   constructor() {
     this.pendingConfirms = new Map();
-
-    // 进化动作白名单（符合条件时自动批准）
-    this.AUTO_EVOLVE_WHITELIST = [
-      'evolve_handler',
-      'evolve_extension',
-      'evolve_server'
-    ];
 
     // Web 控制台 WebSocket 客户端集合（由 websocket/handler.js 注入）
     this._webClients = null;
@@ -49,13 +41,7 @@ class ConfirmManager {
       return onResponse(true);
     }
 
-    // 优先级 1：自动进化任务自动批准
-    if (this.shouldAutoApprove(actionInfo)) {
-      console.log(`[ConfirmManager] Auto-approving evolution action: ${actionInfo.action} (auto-evolve task)`);
-      return onResponse(true);
-    }
-
-    // 优先级 2：开发模式全量自动批准
+    // 优先级 1：开发模式全量自动批准
     if (process.env.AUTO_CONFIRM === 'true') {
       console.log(`[ConfirmManager] Auto-approving action: ${actionInfo.action} (AUTO_CONFIRM=true)`);
       return onResponse(true);
@@ -103,36 +89,6 @@ class ConfirmManager {
     if (timer.unref) timer.unref();
 
     return confirmId;
-  }
-
-  /**
-   * 检查是否应该自动批准该动作
-   */
-  shouldAutoApprove(actionInfo) {
-    if (!this.AUTO_EVOLVE_WHITELIST.includes(actionInfo.action)) {
-      return false;
-    }
-
-    // 兼容两种传入格式：task 对象直接有 options，或 task 就是 options
-    const task = actionInfo.task;
-    if (!task) return false;
-
-    // 格式 1：task.options.autoEvolve（来自 queueManager 的完整任务对象）
-    if (task.options && task.options.autoEvolve === true) {
-      return true;
-    }
-
-    // 格式 2：task.autoEvolve（旧版直接挂载）
-    if (task.autoEvolve === true) {
-      return true;
-    }
-
-    // 格式 3：prompt 包含自动进化标识
-    if (task.prompt && task.prompt.includes('[自动进化]')) {
-      return true;
-    }
-
-    return false;
   }
 
   /**

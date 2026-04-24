@@ -1,10 +1,6 @@
-const fileExecutor = require('../evolution/file-executor');
-const codeExecutor = require('../evolution/code-executor');
-const systemExecutor = require('../evolution/system-executor');
-const evolveExecutor = require('../evolution/evolve-executor');
-
-// Feature flag: auto-evolve actions are disabled in the refactored architecture.
-const disabledEvolveAction = () => ({ success: false, error: 'Evolve actions are disabled by configuration.' });
+const fileExecutor = require('./file-executor');
+const codeExecutor = require('./code-executor');
+const systemExecutor = require('./system-executor');
 const confirmManager = require('./confirm-manager');
 
 // 执行器注册表，定义每个动作的处理函数和风险等级
@@ -21,11 +17,6 @@ const actionRegistry = {
   // === 系统操作 ===
   execute_command: { executor: systemExecutor.executeCommand, riskLevel: 'high', requireConfirm: true },
   get_system_info: { executor: systemExecutor.getSystemInfo, riskLevel: 'low', requireConfirm: false },
-
-  // === 自我进化操作 (FROZEN) ===
-  evolve_handler: { executor: disabledEvolveAction, riskLevel: 'high', requireConfirm: false },
-  evolve_extension: { executor: disabledEvolveAction, riskLevel: 'high', requireConfirm: false },
-  evolve_server: { executor: disabledEvolveAction, riskLevel: 'high', requireConfirm: false },
 
   // === DeepSeek 页面交互操作 ===
   // 这些操作不能在 Node.js 中直接执行，需要通过 WebSocket 发送给 Chrome 扩展

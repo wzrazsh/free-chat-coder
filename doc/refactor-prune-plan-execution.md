@@ -100,93 +100,91 @@
 
 ### 阶段 1：物理删除与归档（确认新主线稳定后执行）
 
-> **状态：⏳ 待执行**  
-> **前置条件：新主线（任务协议 + patch 确认流程）验证稳定**
+> **状态：✅ 已完成**  
+> **执行时间：2026-04-25**  
+> **验证结果：服务正常启动，`/evolve` 返回 404，语法检查全部通过，无运行时数据泄漏**
 
 #### Step 1.1 — 删除扩展侧进化代码
-- [ ] `chromevideo/background.js`
-  - [ ] 删除 `importScripts('auto-evolve-monitor.js')`
-  - [ ] 删除 `AutoEvolveController` 类（约 245 行）
-  - [ ] 删除 `autoEvolveController` 全局实例
-  - [ ] 删除 `msg.type === 'auto_evolve'` 分支
-  - [ ] 删除 `msg.type === 'start_auto_evolve'` 分支
-  - [ ] 删除 `msg.type === 'stop_auto_evolve'` 分支
-  - [ ] 删除 `msg.type === 'resume_auto_evolve'` 分支
-  - [ ] 删除 `forwardAutoEvolveRequest` 函数（如仍存在）
-- [ ] `chromevideo/sidepanel.js`
-  - [ ] 删除 `autoEvolveState` 变量声明
-  - [ ] 删除 `loadEvolveState()`, `saveEvolveState()`, `updateEvolveUI()`
-  - [ ] 删除 `startAutoEvolve()`, `stopAutoEvolve()`, `updateEvolveProgress()`
-- [ ] `chromevideo/sidepanel.html`
-  - [ ] 删除自动进化卡片 DOM
-- [ ] `chromevideo/auto-evolve-monitor.js`
-  - [ ] **删除整个文件**
+- [x] `chromevideo/background.js`
+  - [x] 删除 `importScripts('auto-evolve-monitor.js')` 条件导入块
+  - [x] 删除 `AutoEvolveController` 类（约 245 行）+ `autoEvolveController` 全局实例
+  - [x] 删除 `msg.type === 'auto_evolve'` 分支
+  - [x] 删除 `msg.type === 'start_auto_evolve'` 分支
+  - [x] 删除 `msg.type === 'stop_auto_evolve'` 分支
+  - [x] 删除 `msg.type === 'resume_auto_evolve'` 分支
+  - [x] 删除 `forwardAutoEvolveRequest` 函数
+  - [x] 删除 `autoEvolveMonitor` 引用（executeDeepSeekTask 中的监控代码）
+  - [x] 删除 `get_extension_status` 中的 autoEvolve 状态
+- [x] `chromevideo/sidepanel.js`
+  - [x] 删除 `autoEvolveState` 变量声明
+  - [x] 删除 `loadEvolveState()`, `saveEvolveState()`, `updateEvolveUI()`
+  - [x] 删除 `startAutoEvolve()`, `stopAutoEvolve()`, `updateEvolveProgress()`
+  - [x] 删除 `reportTestDomError()`
+  - [x] 删除进化事件监听和 `evolve_progress` 处理
+  - [x] 删除初始化中的进化会话恢复逻辑
+- [x] `chromevideo/sidepanel.html`
+  - [x] 删除自动进化卡片 DOM
+- [x] `chromevideo/auto-evolve-monitor.js`
+  - [x] **已删除整个文件**
 
 #### Step 1.2 — 删除服务端进化代码
-- [ ] `queue-server/websocket/handler.js`
-  - [ ] 删除 `data.type === 'auto_evolve'` 整个分支
-  - [ ] 删除顶部未使用的 import：`autoEvolveManager`, `selfDiagnosis`, `evolutionHistory`
-- [ ] `queue-server/actions/action-engine.js`
-  - [ ] 删除 `evolve_handler`, `evolve_extension`, `evolve_server` 注册条目
-  - [ ] 删除 `const evolveExecutor = require('../evolution/evolve-executor');`
-- [ ] `queue-server/index.js`
-  - [ ] 删除 `const evolutionRoutes = require('./evolution/hot-reload');`
-  - [ ] 删除 `const watchExtension = require('./evolution/extension-watcher');`
-  - [ ] 删除 `app.use('/evolve', evolutionRoutes);`
-  - [ ] 删除 `watchExtension();`
+- [x] `queue-server/websocket/handler.js`
+  - [x] 删除 `data.type === 'auto_evolve'` 整个分支
+  - [x] 删除顶部未使用的 import：`autoEvolveManager`, `selfDiagnosis`, `evolutionHistory`
+  - [x] 删除 `finishTaskUpdate` 中的 `evolutionHistory.updateEvolutionResult`
+  - [x] 删除 `resolveTaskFallbackProvider` / `requeueTaskWithProviderFallback` 函数
+  - [x] 删除进化辅助函数（shouldAllowAutoEvolve, recordEvolutionRequest, generateEvolutionPrompt, getEvolutionPriority, getEvolutionStats）
+  - [x] 清理导出列表
+- [x] `queue-server/actions/action-engine.js`
+  - [x] 删除 `evolve_handler`, `evolve_extension`, `evolve_server` 注册条目
+  - [x] 删除 `const evolveExecutor = require('../evolution/evolve-executor');`
+  - [x] 删除 `disabledEvolveAction` 占位函数
+  - [x] 更新 executor 引用路径从 `../evolution/` 到 `./`
+- [x] `queue-server/index.js`
+  - [x] 删除 `const evolutionRoutes = require('./evolution/hot-reload');`
+  - [x] 删除 `const watchExtension = require('./evolution/extension-watcher');`
+  - [x] 删除 `/evolve` 路由挂载
+  - [x] 删除 `watchExtension()` 调用
+  - [x] 删除 `FCC_ENABLE_EVOLVE_API` 变量
 
 #### Step 1.3 — 归档/删除 evolution 目录
-- [ ] `queue-server/evolution/auto-evolve-manager.js` — 删除/归档
-- [ ] `queue-server/evolution/code-executor.js` — 删除/归档
-- [ ] `queue-server/evolution/code-writer.js` — 删除/归档
-- [ ] `queue-server/evolution/evolution-history.js` — 删除/归档
-- [ ] `queue-server/evolution/evolve-executor.js` — 删除/归档
-- [ ] `queue-server/evolution/extension-watcher.js` — 删除/归档
-- [ ] `queue-server/evolution/file-executor.js` — **注意：action-engine.js 中的 `read_file`, `write_file`, `list_files` 依赖此文件，若保留 action-engine 则需保留 file-executor**
-- [ ] `queue-server/evolution/hot-reload.js` — 删除/归档
-- [ ] `queue-server/evolution/self-diagnosis.js` — 删除/归档
-- [ ] `queue-server/evolution/system-executor.js` — **注意：action-engine.js 中的 `execute_command`, `get_system_info` 依赖此文件**
-- [ ] **决策点**：如果 action-engine 中的 `read_file`/`write_file`/`list_files`/`execute_command` 仍需保留，则不能删除 `file-executor.js` 和 `system-executor.js`。这两个文件需移到 `queue-server/actions/` 或 `queue-server/utils/` 下。
+- [x] `file-executor.js` → 移动到 `queue-server/actions/file-executor.js`
+- [x] `code-executor.js` → 移动到 `queue-server/actions/code-executor.js`
+- [x] `system-executor.js` → 移动到 `queue-server/actions/system-executor.js`
+- [x] 其余 7 个文件（auto-evolve-manager, code-writer, evolution-history, evolve-executor, extension-watcher, hot-reload, self-diagnosis）→ **已删除**
+- [x] `queue-server/evolution/` 目录 → **已整个删除**
 
 #### Step 1.4 — 归档/删除 test-validator
-- [ ] `queue-server/test-validator/communicator.js` — 删除/归档
-- [ ] `queue-server/test-validator/event-bus.js` — 删除/归档
-- [ ] `queue-server/test-validator/index.js` — 删除/归档
-- [ ] `queue-server/test-validator/rollback-manager.js` — 删除/归档
-- [ ] `queue-server/test-validator/run-tests.js` — 删除/归档
-- [ ] `queue-server/test-validator/state-manager.js` — 删除/归档
-- [ ] `queue-server/test-validator/test-error-detection.js` — 删除/归档
-- [ ] `queue-server/test-validator/test-executor.js` — 删除/归档
-- [ ] `queue-server/test-validator/test-result-analyzer.js` — 删除/归档
-- [ ] `queue-server/test-validator/test-runner.js` — 删除/归档
-- [ ] `queue-server/test-validator/test-websocket-flow.js` — 删除/归档
-- [ ] `queue-server/test-validator/unified-test-runner.js` — 删除/归档
-- [ ] `queue-server/test-validator/validation-service.js` — 删除/归档
+- [x] `queue-server/test-validator/` 全部 13 个文件 → **已整个删除**
 
 #### Step 1.5 — 删除测试脚本
-- [ ] `queue-server/test-auto-evolve.js` — 删除
-- [ ] `queue-server/test-auto-evolve-loop.js` — 删除
-- [ ] `queue-server/test-auto-evolve-loop2.js` — 删除
-- [ ] `queue-server/test-evolve-executor.js` — 删除
+- [x] `queue-server/test-auto-evolve.js` — 已删除
+- [x] `queue-server/test-auto-evolve-loop.js` — 已删除
+- [x] `queue-server/test-auto-evolve-loop2.js` — 已删除
+- [x] `queue-server/test-evolve-executor.js` — 已删除
 
 #### Step 1.6 — 删除 cron/autopilot 脚本
-- [ ] `scripts/cron-dev-cycle.sh` — 归档到 `doc/archive/scripts/` 或直接删除
-- [ ] `scripts/dev-autopilot.sh` — 同上
-- [ ] `scripts/dev-autopilot-prompt.md` — 同上
-- [ ] `scripts/install-dev-cron.sh` — 同上
-- [ ] `scripts/nightly-validate.sh` — 同上
-- [ ] **保留**：`scripts/dev-status-report.js`, `scripts/sync-config.js`, `scripts/onboard-deepseek-web.js`, `scripts/verify-deepseek-web-provider.js`
+- [x] `scripts/cron-dev-cycle.sh` — 已删除
+- [x] `scripts/dev-autopilot.sh` — 已删除
+- [x] `scripts/dev-autopilot-prompt.md` — 已删除
+- [x] `scripts/install-dev-cron.sh` — 已删除
+- [x] `scripts/nightly-validate.sh` — 已删除
+- [x] **保留**：`scripts/dev-status-report.js`, `scripts/sync-config.js`, `scripts/onboard-deepseek-web.js`, `scripts/verify-deepseek-web-provider.js`
 
-#### Step 1.7 — 降级 DeepSeek Web Zero-Token Provider
-- [ ] `queue-server/providers/deepseek-web/` 代码保留但不作为默认 provider
-- [ ] 在 `README.md` 或 `shared/config.js` 注释中注明：MVP 默认走 `extension-dom`，zero-token 为实验能力
+#### Step 1.7 — 清理残留引用
+- [x] `queue-server/actions/confirm-manager.js` — 删除 AUTO_EVOLVE_WHITELIST 和 shouldAutoApprove
+- [x] `queue-server/providers/index.js` — 删除 AUTO_EVOLVE_PROVIDER 和 autoEvolve 路由逻辑
+- [x] `queue-server/system-prompt/template.js` — 删除进化操作和自动进化说明
+- [x] `queue-server/custom-handler.js` — 删除过时 AutoEvolve 注释
+- [x] `shared/config.js` — 添加注释标注 feature flags 已永久禁用
+- [x] `chromevideo/utils/queue-config.js` — 删除 features.enableAutoEvolve
 
 #### 阶段 1 验收标准
-- [ ] 代码库中不存在 `auto_evolve` 消息处理逻辑
-- [ ] 代码库中不存在 `evolve_handler`/`evolve_extension`/`evolve_server` 动作
-- [ ] `/evolve` 路由不存在（服务启动时无此路由）
-- [ ] `queue-server/evolution/` 已删除或归档
-- [ ] `git status` 干净，无运行时数据泄漏
+- [x] 代码库中不存在 `auto_evolve` 消息处理逻辑
+- [x] 代码库中不存在 `evolve_handler`/`evolve_extension`/`evolve_server` 动作
+- [x] `/evolve` 路由不存在（服务启动时无此路由，返回 404）
+- [x] `queue-server/evolution/` 已删除
+- [x] `git status` 干净，无运行时数据泄漏
 
 ---
 
@@ -213,5 +211,7 @@
 ## 执行优先级
 
 1. ✅ **阶段 0（冻结）** — 已完成
-2. ⏳ **验证新主线稳定** — 等待任务协议 + patch 确认流程可完整跑通
-3. ⏳ **阶段 1（删除）** — 待前置条件满足后执行
+2. ✅ **阶段 1（删除）** — 已完成
+3. ⏳ **阶段 2（新任务协议）** — 待执行
+4. ⏳ **阶段 3（知识库 MVP）** — 待执行
+5. ⏳ **阶段 4（上下文选择）** — 待执行

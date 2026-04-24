@@ -9,11 +9,6 @@ const { execFile } = require('child_process');
 const setupWebSocket = require('./websocket/handler');
 const taskRoutes = require('./routes/tasks');
 const conversationRoutes = require('./routes/conversations');
-const evolutionRoutes = require('./evolution/hot-reload');
-const watchExtension = require('./evolution/extension-watcher');
-
-// Feature flags for refactor prune
-const FCC_ENABLE_EVOLVE_API = process.env.FCC_ENABLE_EVOLVE_API === 'true';
 const sharedConfig = require('../shared/config');
 
 // 日志配置
@@ -77,11 +72,6 @@ app.get('/health', (req, res) => {
 // Setup RESTful routes
 app.use('/tasks', taskRoutes);
 app.use('/conversations', conversationRoutes);
-if (FCC_ENABLE_EVOLVE_API) {
-  app.use('/evolve', evolutionRoutes);
-} else {
-  app.use('/evolve', (req, res) => res.status(410).json({ error: '/evolve is deprecated. Use /tasks instead.' }));
-}
 
 // Native Host installation endpoint
 app.post('/install-native-host', (req, res) => {
@@ -120,11 +110,6 @@ const server = http.createServer(app);
 
 // Initialize WebSocket Handler
 setupWebSocket(server);
-
-// Watch Chrome extension for hot reload (disabled during refactor)
-if (FCC_ENABLE_EVOLVE_API) {
-  watchExtension();
-}
 
 function probePort(port) {
   return new Promise((resolve, reject) => {

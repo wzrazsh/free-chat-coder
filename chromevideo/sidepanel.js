@@ -17,15 +17,6 @@ let selectedModeProfile = 'expert';
 let pendingAttachments = [];
 let workbench = null;
 
-// 自动进化状态
-let autoEvolveState = {
-  active: false,
-  sessionId: null,
-  direction: '',
-  deepseekTabId: null,
-  progress: 0
-};
-
 function updateQueuePortLabel(portNumber) {
   return portNumber;
 }
@@ -790,138 +781,6 @@ async function syncModeProfileFromDeepSeek() {
   return false;
 }
 
-//  进化状态
-// ══════════════════════════════════════════
-
-async function loadEvolveState() {
-  return new Promise((resolve) => {
-    chrome.storage.local.get(['autoEvolveState'], (result) => {
-      if (result.autoEvolveState) {
-        autoEvolveState = result.autoEvolveState;
-        updateEvolveUI();
-      }
-      resolve();
-    });
-  });
-}
-
-function saveEvolveState() {
-  chrome.storage.local.set({ autoEvolveState });
-}
-
-function updateEvolveUI() {
-  const startBtn = document.getElementById('start-evolve');
-  const stopBtn = document.getElementById('stop-evolve');
-  const linkBtn = document.getElementById('link-evolve-tab');
-  const statusText = document.getElementById('evolve-status-text');
-  const statusDiv = document.getElementById('evolve-status');
-  const sessionDiv = document.getElementById('evolve-session');
-  const sessionInfo = document.getElementById('session-info');
-  const directionInput = document.getElementById('evolve-direction');
-
-  if (autoEvolveState.active) {
-    startBtn.style.display = 'none';
-    stopBtn.style.display = 'inline-flex';
-    linkBtn.style.display = 'inline-flex';
-    statusDiv.className = 'evolve-status active';
-    statusText.textContent = '🟢 进化中... (进度: ' + autoEvolveState.progress + '%)';
-    sessionDiv.style.display = 'flex';
-    sessionInfo.textContent = autoEvolveState.sessionId || '新会话';
-    directionInput.disabled = true;
-  } else {
-    startBtn.style.display = 'inline-flex';
-    stopBtn.style.display = 'none';
-    linkBtn.style.display = 'none';
-    statusDiv.className = 'evolve-status';
-    statusText.textContent = autoEvolveState.sessionId
-      ? '⏸ 已暂停，可继续进化'
-      : '点击"开始进化"启动主动进化模式';
-    sessionDiv.style.display = autoEvolveState.sessionId ? 'flex' : 'none';
-    sessionInfo.textContent = autoEvolveState.sessionId || '';
-    directionInput.disabled = false;
-    if (autoEvolveState.direction) {
-      directionInput.value = autoEvolveState.direction;
-    }
-  }
-}
-
-async function startAutoEvolve() {
-  if (!(typeof queueConfig !== 'undefined' && queueConfig.features && queueConfig.features.enableAutoEvolve)) {
-    addLogMessage('system', '⛔ 自动进化已冻结');
-    return;
-  }
-
-  const direction = document.getElementById('evolve-direction').value.trim();
-  if (!direction) {
-    alert('请输入进化方向');
-    return;
-  }
-
-  const sessionId = 'evolve-' + Date.now().toString(36);
-
-  const tabs = await chrome.tabs.query({ url: "https://chat.deepseek.com/*" });
-  let deepseekTabId;
-  if (tabs.length > 0) {
-    deepseekTabId = tabs[0].id;
-    await chrome.tabs.update(deepseekTabId, { active: true });
-  } else {
-    const newTab = await chrome.tabs.create({ url: "https://chat.deepseek.com/", active: true });
-    deepseekTabId = newTab.id;
-    await new Promise((resolve) => {
-      chrome.tabs.onUpdated.addListener(function listener(tabId, info) {
-        if (tabId === deepseekTabId && info.status === 'complete') {
-          chrome.tabs.onUpdated.removeListener(listener);
-          setTimeout(resolve, 2000);
-        }
-      });
-    });
-  }
-
-  autoEvolveState = {
-    active: true,
-    sessionId: sessionId,
-    direction: direction,
-    deepseekTabId: deepseekTabId,
-    progress: 0
-  };
-
-  saveEvolveState();
-  updateEvolveUI();
-
-  addLogMessage('system', '🔮 自动进化已启动: ' + direction);
-
-  chrome.runtime.sendMessage({
-    type: 'start_auto_evolve',
-    sessionId: sessionId,
-    direction: direction,
-    deepseekTabId: deepseekTabId
-  });
-}
-
-function stopAutoEvolve() {
-  autoEvolveState.active = false;
-  saveEvolveState();
-  updateEvolveUI();
-  addLogMessage('system', '⏸ 自动进化已停止');
-  chrome.runtime.sendMessage({ type: 'stop_auto_evolve' });
-}
-
-function updateEvolveProgress(progress) {
-  autoEvolveState.progress = progress;
-  saveEvolveState();
-  updateEvolveUI();
-}
-
-function reportTestDomError() {
-  chrome.runtime.sendMessage({
-    type: 'content_script_error',
-    errorType: 'dom_selector_not_found',
-    details: { selector: 'test-button-selector', context: 'sidepanel test', url: 'https://chat.deepseek.com/' }
-  }, () => {
-    addLogMessage('system', '⚠️ 模拟 DOM 错误已记录');
-  });
-}
-
 // ══════════════════════════════════════════
 //  Native Host 通信
 // ══════════════════════════════════════════
@@ -1096,18 +955,6 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   else if (msg.type === 'service_bootstrap_status') {
     applyBootstrapStatus(msg.status);
   }
-  else if (msg.type === 'evolve_progress') {
-    updateEvolveProgress(msg.progress);
-  }
-});
-
-// 自动进化事件
-document.getElementById('start-evolve').addEventListener('click', startAutoEvolve);
-document.getElementById('stop-evolve').addEventListener('click', stopAutoEvolve);
-document.getElementById('link-evolve-tab').addEventListener('click', () => {
-  if (autoEvolveState.deepseekTabId) {
-    chrome.tabs.update(autoEvolveState.deepseekTabId, { active: true });
-  }
 });
 
 // ══════════════════════════════════════════
@@ -1136,7 +983,6 @@ workbench = serviceWorkbench.createServiceWorkbench({
     chrome.tabs.create({ url: 'https://chat.deepseek.com' });
     addLogMessage('system', '💬 打开 DeepSeek 聊天页');
   },
-  onTestDomError: reportTestDomError,
   onRefresh: () => {
     sendCommand('status');
     refreshBootstrapStatus(true);
@@ -1149,51 +995,33 @@ workbench.load().catch((error) => {
 connectHost();
 refreshBootstrapStatus(true);
 fetchPendingConfirms();
-loadEvolveState().then(() => {
-  syncModeProfileFromDeepSeek().then(() => {
-    fetchExtensionConversations().then(() => {
-      if (activeConversationId) {
-        loadConversationMessages(activeConversationId);
-      }
-    });
+syncModeProfileFromDeepSeek().then(() => {
+  fetchExtensionConversations().then(() => {
+    if (activeConversationId) {
+      loadConversationMessages(activeConversationId);
+    }
   });
+});
 
+if (port) {
+  sendCommand('status');
+}
+
+// 侧边栏常驻：每 3 秒轮询状态（仅通过 native messaging 获取）
+statusInterval = setInterval(() => {
   if (port) {
     sendCommand('status');
   }
+}, 3000);
 
-  // 侧边栏常驻：每 3 秒轮询状态（仅通过 native messaging 获取）
-  statusInterval = setInterval(() => {
-    if (port) {
-      sendCommand('status');
-    }
-  }, 3000);
+// 模式同步：定期从 DeepSeek 页面同步当前模式状态
+setInterval(() => {
+  syncModeProfileFromDeepSeek();
+}, 5000);
 
-  // 模式同步：定期从 DeepSeek 页面同步当前模式状态
-  setInterval(() => {
-    syncModeProfileFromDeepSeek();
-  }, 5000);
-
-  confirmPollInterval = setInterval(() => {
-    fetchPendingConfirms();
-  }, 5000);
-
-  // 恢复进化会话
-  if (autoEvolveState.active && autoEvolveState.direction) {
-    chrome.runtime.sendMessage({
-      type: 'resume_auto_evolve',
-      sessionId: autoEvolveState.sessionId,
-      direction: autoEvolveState.direction,
-      deepseekTabId: autoEvolveState.deepseekTabId
-    }, (response) => {
-      if (!response || !response.success) {
-        autoEvolveState.active = false;
-        saveEvolveState();
-        updateEvolveUI();
-      }
-    });
-  }
-});
+confirmPollInterval = setInterval(() => {
+  fetchPendingConfirms();
+}, 5000);
 
 // 侧边栏关闭时清理
 window.addEventListener('unload', () => {

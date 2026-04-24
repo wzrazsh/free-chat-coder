@@ -62,17 +62,7 @@ try {
   console.error('[SW] Failed to load queue-config:', error);
 }
 
-// 条件导入自动进化监控模块
-if (typeof queueConfig !== 'undefined' && queueConfig.features && queueConfig.features.enableAutoEvolve) {
-  try {
-    importScripts('auto-evolve-monitor.js');
-    console.log('[SW] Auto-evolve monitor loaded');
-  } catch (error) {
-    console.error('[SW] Failed to load auto-evolve monitor:', error);
-  }
-} else {
-  console.log('[SW] Auto-evolve monitor skipped (feature disabled)');
-}
+// Auto-evolve monitor removed (Phase 1 prune)
 
 // 维护当前任务 ID
 let currentBackgroundTaskId = null;
@@ -315,257 +305,7 @@ async function executeBrowserActionRequest(message) {
   }
 }
 
-// ==================== 主动进化控制器 ====================
-class AutoEvolveController {
-  constructor() {
-    this.active = false;
-    this.sessionId = null;
-    this.direction = '';
-    this.deepseekTabId = null;
-    this.pollInterval = null;
-    this.lastCheckedMessageCount = 0;
-    this.POLL_INTERVAL_MS = 10000; // 每10秒检查一次
-  }
-
-  /**
-   * 启动主动进化
-   */
-  async start(sessionId, direction, deepseekTabId) {
-    if (!(typeof queueConfig !== 'undefined' && queueConfig.features && queueConfig.features.enableAutoEvolve)) {
-      console.log('[AEC] Auto-evolve is disabled');
-      return { success: false, message: 'Auto-evolve is disabled' };
-    }
-
-    if (this.active) {
-      console.log('[AEC] Already active');
-      return { success: false, message: 'Already active' };
-    }
-
-    this.active = true;
-    this.sessionId = sessionId;
-    this.direction = direction;
-    this.deepseekTabId = deepseekTabId;
-
-    console.log('[AEC] Starting proactive evolution:', { sessionId, direction });
-
-    // 发送初始提示到 DeepSeek
-    await this.sendInitialPrompt();
-
-    // 开始轮询
-    this.startPolling();
-
-    return { success: true };
-  }
-
-  /**
-   * 发送初始提示到 DeepSeek
-   */
-  async sendInitialPrompt() {
-    const prompt = `你是 SOLO Coder 的 AI 进化助手。
-
-目标：${this.direction}
-
-工作模式：
-1. 持续分析扩展代码和服务代码
-2. 识别可优化的地方（性能、架构、用户体验）
-3. 生成具体的代码修改建议
-4. 当检测到进化指令时，我会创建一个进化任务
-
-请先分析当前的代码库，给出第一个优化建议。`;
-
-    try {
-      await chrome.tabs.sendMessage(this.deepseekTabId, {
-        action: 'submitPrompt',
-        prompt: prompt
-      });
-      console.log('[AEC] Initial prompt sent');
-    } catch (err) {
-      console.error('[AEC] Failed to send initial prompt:', err);
-    }
-  }
-
-  /**
-   * 开始轮询 DeepSeek 对话
-   */
-  startPolling() {
-    if (this.pollInterval) {
-      clearInterval(this.pollInterval);
-    }
-
-    this.pollInterval = setInterval(async () => {
-      if (!this.active) return;
-
-      try {
-        // 获取 DeepSeek 标签页的最新消息
-        const messages = await this.getDeepseekMessages();
-
-        // 分析是否有新的进化指令
-        const evolutionCommand = this.extractEvolutionCommand(messages);
-
-        if (evolutionCommand) {
-          console.log('[AEC] Found evolution command:', evolutionCommand);
-          await this.triggerEvolution(evolutionCommand);
-        }
-
-        // 更新进度
-        this.updateProgress(messages.length);
-
-      } catch (err) {
-        console.error('[AEC] Polling error:', err);
-      }
-    }, this.POLL_INTERVAL_MS);
-
-    console.log('[AEC] Polling started');
-  }
-
-  /**
-   * 停止轮询
-   */
-  stopPolling() {
-    if (this.pollInterval) {
-      clearInterval(this.pollInterval);
-      this.pollInterval = null;
-    }
-    console.log('[AEC] Polling stopped');
-  }
-
-  /**
-   * 从 DeepSeek 对话中提取进化指令
-   */
-  extractEvolutionCommand(messages) {
-    // 查找包含进化指令的消息
-    for (const msg of messages) {
-      const content = msg.content || '';
-
-      // 检测进化指令模式
-      if (content.includes('[EVOLVE]') ||
-          content.includes('进化指令') ||
-          content.includes('evolve:') ||
-          content.includes('优化代码：') ||
-          content.includes('修改建议：')) {
-
-        // 提取指令内容
-        const commandMatch = content.match(/\[EVOLVE\]([\s\S]*?)(?=\n\n|$)/i) ||
-                           content.match(/进化指令[：:]\s*([\s\S]*?)(?=\n\n|$)/i) ||
-                           content.match(/evolve:[ \t]*([\s\S]*?)(?=\n\n|$)/i);
-
-        if (commandMatch) {
-          return commandMatch[1].trim();
-        }
-
-        // 如果直接包含代码修改建议，提取整个消息
-        if (content.includes('```') || content.includes('文件：') || content.includes('修改：')) {
-          return content;
-        }
-      }
-    }
-
-    return null;
-  }
-
-  /**
-   * 获取 DeepSeek 对话消息
-   */
-  async getDeepseekMessages() {
-    try {
-      const response = await chrome.tabs.sendMessage(this.deepseekTabId, {
-        action: 'getConversation'
-      });
-
-      if (response && response.messages) {
-        return response.messages;
-      }
-    } catch (err) {
-      console.log('[AEC] Could not get messages (page may not be ready)');
-    }
-    return [];
-  }
-
-  /**
-   * 触发进化执行
-   */
-  async triggerEvolution(command) {
-    console.log('[AEC] Triggering evolution with command:', command.substring(0, 100));
-
-    // 构造进化任务
-    const task = {
-      prompt: `[主动进化] ${command}\n\n会话: ${this.sessionId}\n方向: ${this.direction}`,
-      options: {
-        autoEvolve: true,
-        evolutionSource: 'proactive',
-        sessionId: this.sessionId,
-        direction: this.direction
-      }
-    };
-
-    // 发送到 queue-server
-    try {
-      await fetchQueueJson('/tasks', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(task)
-      });
-
-      console.log('[AEC] Evolution task created');
-      this.updateProgress(this.lastCheckedMessageCount + 1, '任务已创建');
-    } catch (err) {
-      console.error('[AEC] Failed to create task:', err);
-    }
-  }
-
-  /**
-   * 更新进度
-   */
-  updateProgress(messageCount, status) {
-    this.lastCheckedMessageCount = messageCount;
-
-    const progress = status ? 50 : Math.min(messageCount * 10, 90);
-
-    // 通过消息通知 popup
-    chrome.runtime.sendMessage({ type: 'evolve_progress', progress }).catch(() => {
-      // Popup 可能未打开，忽略错误
-    });
-
-    // 保存进度
-    chrome.storage.local.set({
-      autoEvolveState: {
-        active: this.active,
-        sessionId: this.sessionId,
-        direction: this.direction,
-        deepseekTabId: this.deepseekTabId,
-        progress: progress
-      }
-    });
-  }
-
-  /**
-   * 停止主动进化
-   */
-  stop() {
-    this.stopPolling();
-    this.active = false;
-    this.sessionId = null;
-    console.log('[AEC] Stopped');
-  }
-
-  /**
-   * 恢复进化会话
-   */
-  async resume(sessionId, direction, deepseekTabId) {
-    // 检查 DeepSeek 标签页是否还在
-    try {
-      await chrome.tabs.sendMessage(deepseekTabId, { action: 'ping' });
-    } catch (err) {
-      console.log('[AEC] DeepSeek tab no longer available');
-      return { success: false, message: 'Tab closed' };
-    }
-
-    return await this.start(sessionId, direction, deepseekTabId);
-  }
-}
-
-// 创建全局控制器实例
-const autoEvolveController = new AutoEvolveController();
+// Auto-evolve controller removed (Phase 1 prune)
 
 const WEB_CONSOLE_PORT = 5173;
 const SERVICE_BOOTSTRAP_STATUS_KEY = 'serviceBootstrapStatus';
@@ -1092,20 +832,8 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   } else if (msg.type === 'reload_extension') {
     console.log('[SW] Reloading extension by server request...');
     chrome.runtime.reload();
-  } else if (msg.type === 'auto_evolve') {
-    if (typeof queueConfig !== 'undefined' && queueConfig.features && queueConfig.features.enableAutoEvolve) {
-      console.log('[SW] Auto-evolve request received:', msg.errorType);
-      forwardAutoEvolveRequest(msg);
-      sendResponse({ received: true });
-    } else {
-      console.log('[SW] Auto-evolve request ignored (feature disabled)');
-      sendResponse({ received: false, error: 'Auto-evolve is disabled' });
-    }
   } else if (msg.type === 'content_script_error') {
     console.log('[SW] Content script error received:', msg.errorType);
-    if (typeof autoEvolveMonitor !== 'undefined' && autoEvolveMonitor.recordError) {
-      autoEvolveMonitor.recordError(msg.errorType, msg.details);
-    }
     sendResponse({ received: true });
   } else if (msg.type === 'confirm_request' || msg.type === 'confirm_resolved') {
     chrome.runtime.sendMessage({
@@ -1116,29 +844,6 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   } else if (msg.type === 'execute_action' || msg.type === 'browser_action') {
     executeBrowserActionRequest(msg);
     sendResponse({ received: true, requestId: msg.requestId || null });
-  }
-  // 主动进化控制消息
-  else if (msg.type === 'start_auto_evolve') {
-    if (typeof queueConfig !== 'undefined' && queueConfig.features && queueConfig.features.enableAutoEvolve) {
-      autoEvolveController.start(msg.sessionId, msg.direction, msg.deepseekTabId)
-        .then((result) => sendResponse(result));
-    } else {
-      sendResponse({ success: false, message: 'Auto-evolve is disabled' });
-    }
-    return true; // 异步响应
-  }
-  else if (msg.type === 'stop_auto_evolve') {
-    autoEvolveController.stop();
-    sendResponse({ success: true });
-  }
-  else if (msg.type === 'resume_auto_evolve') {
-    if (typeof queueConfig !== 'undefined' && queueConfig.features && queueConfig.features.enableAutoEvolve) {
-      autoEvolveController.resume(msg.sessionId, msg.direction, msg.deepseekTabId)
-        .then((result) => sendResponse(result));
-    } else {
-      sendResponse({ success: false, message: 'Auto-evolve is disabled' });
-    }
-    return true; // 异步响应
   }
   else if (msg.type === 'start_extension_conversation') {
     ensureDeepSeekTab()
@@ -1228,11 +933,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           currentTaskId: currentBackgroundTaskId,
           isTaskRunning: !!currentBackgroundTaskId,
           offscreenReady: !!offscreenStatus,
-          serviceBootstrap: bootstrapStatus,
-          autoEvolve: {
-            active: autoEvolveController.active,
-            sessionId: autoEvolveController.sessionId
-          }
+          serviceBootstrap: bootstrapStatus
         },
         offscreen: offscreenStatus || { error: 'Offscreen not responding' }
       };
@@ -1243,11 +944,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           currentTaskId: currentBackgroundTaskId,
           isTaskRunning: !!currentBackgroundTaskId,
           offscreenReady: false,
-          serviceBootstrap: null,
-          autoEvolve: {
-            active: autoEvolveController.active,
-            sessionId: autoEvolveController.sessionId
-          }
+          serviceBootstrap: null
         },
         offscreen: { error: error.message || String(error) }
       });
@@ -1316,11 +1013,6 @@ async function executeDeepSeekTask(task) {
   };
 
   try {
-    // 记录任务开始（性能监控）
-    if (typeof autoEvolveMonitor !== 'undefined' && autoEvolveMonitor.monitorTaskPerformance) {
-      autoEvolveMonitor.monitorTaskPerformance(task.id, taskStartTime);
-    }
-
     // 1. Check if DeepSeek tab is open
     const tabs = await chrome.tabs.query({ url: "https://chat.deepseek.com/*" });
     let targetTabId;
@@ -1350,13 +1042,6 @@ async function executeDeepSeekTask(task) {
     }, (response) => {
       if (chrome.runtime.lastError) {
         console.error('[SW] Content script error:', chrome.runtime.lastError);
-        if (typeof autoEvolveMonitor !== 'undefined' && autoEvolveMonitor.recordContentScriptError) {
-          autoEvolveMonitor.recordContentScriptError(chrome.runtime.lastError.message, {
-            taskId: task.id,
-            tabId: targetTabId,
-            prompt: task.prompt?.substring(0, 100)
-          });
-        }
         finishTask('failed', null, chrome.runtime.lastError.message);
         return;
       }
@@ -1366,39 +1051,12 @@ async function executeDeepSeekTask(task) {
         finishTask('completed', response.reply, null);
       } else {
         console.error('[SW] Task failed in content script:', response);
-        if (typeof autoEvolveMonitor !== 'undefined' && autoEvolveMonitor.recordTaskExecutionError) {
-          autoEvolveMonitor.recordTaskExecutionError(task.id, response?.error || 'Unknown error', {
-            prompt: task.prompt?.substring(0, 100),
-            duration: Date.now() - taskStartTime,
-            response: response
-          });
-        }
         finishTask('failed', null, response ? response.error : 'Unknown error');
       }
     });
   } catch (err) {
     console.error('[SW] Error executing task:', err);
-    if (typeof autoEvolveMonitor !== 'undefined' && autoEvolveMonitor.recordTaskExecutionError) {
-      autoEvolveMonitor.recordTaskExecutionError(task.id, err.toString(), {
-        prompt: task.prompt?.substring(0, 100),
-        duration: Date.now() - taskStartTime
-      });
-    }
     finishTask('failed', null, err.toString());
-  }
-}
-
-/**
- * 转发自动进化请求到offscreen文档
- */
-async function forwardAutoEvolveRequest(evolutionRequest) {
-  try {
-    await ensureOffscreen();
-    chrome.runtime.sendMessage(evolutionRequest)
-      .then(() => console.log('[SW] Auto-evolve request forwarded to offscreen'))
-      .catch(error => console.error('[SW] Failed to forward auto-evolve request:', error));
-  } catch (error) {
-    console.error('[SW] Error in forwardAutoEvolveRequest:', error);
   }
 }
 

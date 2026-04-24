@@ -1,56 +1,89 @@
 # free-chat-coder
 
-`free-chat-coder` 是一个本地多组件原型工程，包含任务队列服务、Web 控制台、Chrome 扩展，以及可选的 `code-server` Web IDE。
+`free-chat-coder` 是一个围绕 **DeepSeek** 构建的本地 AI 辅助开发工具集。它把浏览器扩展、任务队列服务、Web 控制台和可选的 Web IDE 整合在一起，让你可以在本地调度 AI 任务、自动推进代码演进、并在需要时人工确认。
 
-## 目录结构
+核心设计思路：**文本任务走服务端直连**，**浏览器动作走扩展 DOM**，两条链路互补，降低对页面结构变化的脆弱依赖。
 
-- `queue-server/`：Express + WebSocket 后端，负责任务队列、会话同步、审批与热更新。
-- `web-console/`：Vite + React 控制台，用于查看任务、审批操作、浏览扩展会话和编辑 `custom-handler.js`。
-- `chromevideo/`：Chrome 扩展、offscreen WebSocket 客户端、side panel 和 Native Messaging Host。
-- `shared/`：共享配置与队列服务发现逻辑。
-- `scripts/`：维护脚本。
-- `doc/`：设计文档和阶段记录。
+---
 
-## 环境要求
+## 核心特性
 
-- Node.js 16 及以上
-- Chrome 或 Chromium（加载扩展时需要）
-- 可选：`code-server`，默认端口 `8081`
+- **双通道任务执行**
+  - `deepseek-web`：Queue Server 内直接请求 DeepSeek Web 内部接口，无需操控页面 DOM。
+  - `extension-dom`：Chrome 扩展在 DeepSeek 页面内执行输入、发送、截图、上传、会话切换等动作。
+- **自动进化（Auto Evolve）**
+  - 定时任务自动分析代码、生成修改计划、执行变更，并支持失败回退。
+  - 默认优先使用 `deepseek-web` 通道，失败时自动回退到 `extension-dom`。
+- **本地任务队列**
+  - Express + WebSocket 后端，负责任务排队、会话同步、审批流与热重载。
+- **Web 控制台**
+  - Vite + React 前端，查看任务状态、审批操作、浏览扩展会话、编辑 `custom-handler.js`。
+- **Chrome 扩展（DeepSeek Agent Bridge）**
+  - Side Panel、Popup、Offscreen WebSocket、Native Messaging Host。
+  - 访问 DeepSeek 页面时自动唤起 Side Panel，支持页面读写、截图、附件上传。
+- **一键环境诊断**
+  - `validate-environment.js` 集中检查扩展 ID、Native Host 安装、端口占用、登录态快照和依赖完整性。
 
-先执行一次环境检查：
+---
+
+## 架构概览
+
+```
+┌─────────────────┐     WebSocket/HTTP      ┌─────────────────┐
+│  Web Console    │ ◄──────────────────────► │  Queue Server   │
+│  (Vite+React)   │                        │  (Express+WS)   │
+│   Port 5173     │                        │  Port 8080~8090 │
+└─────────────────┘                        └────────┬────────┘
+                                                    │
+                       ┌────────────────────────────┼────────────────────────────┐
+                       │                            │                            │
+              ┌────────▼────────┐          ┌────────▼────────┐          ┌────────▼────────┐
+              │  deepseek-web   │          │ extension-dom   │          │   auto_evolve   │
+              │   Provider      │          │   Provider      │          │   (默认deepseek)│
+              │  (服务端直连)    │          │  (Chrome扩展)    │          │  (失败回退DOM)  │
+              └─────────────────┘          └────────┬────────┘          └─────────────────┘
+                                                    │
+                              Native Messaging      │     content scripts / offscreen
+                              ┌─────────────────────┘
+                              │
+                    ┌─────────▼──────────┐
+                    │   Chrome Extension  │
+                    │  (DeepSeek Agent    │
+                    │     Bridge)         │
+                    └─────────────────────┘
+```
+
+### 目录说明
+
+| 目录 | 说明 |
+|---|---|
+| `queue-server/` | 任务队列、会话管理、provider 执行、热重载后端 |
+| `web-console/` | 可视化控制台，基于 Vite + React + Monaco Editor |
+| `chromevideo/` | Chrome 扩展、Offscreen 页面、Side Panel、Native Messaging Host |
+| `shared/` | 共享配置与队列服务发现逻辑 |
+| `scripts/` | 维护脚本：环境同步、DeepSeek 登录态采集、provider 验证、状态报告 |
+| `doc/` | 设计文档、阶段记录、路线图 |
+
+---
+
+## 快速开始
+
+### 1. 环境要求
+
+- Node.js 16+
+- Chrome / Chromium（加载扩展时需要）
+- 可选：`code-server`（默认端口 8081）
+
+### 2. 环境检查
 
 ```bash
 node validate-environment.js
 node validate-environment.js --profile .browser-profile
 ```
 
-`validate-environment.js` 现在会集中输出扩展 ID、Native Host manifest 安装位置、Queue Server / Web Console 端口状态，以及浏览器、Node 模块和可选 `Xvfb` 依赖的诊断结果；如果存在阻塞问题，会直接给出可执行修复步骤。
-当 `.browser-profile` 处于带远程调试的运行状态时，诊断结果还会额外显示 `DeepSeek Web` 分组，用于检查已保存的 zero-token 登录态快照、profile 是否匹配，以及当前浏览器是否仍能抓到 `cookie` / `bearer` / `userAgent`。
+该脚本会输出扩展 ID、Native Host manifest 位置、Queue Server / Web Console 端口状态，以及 DeepSeek Web 登录态快照诊断。如果存在阻塞问题，会直接给出修复步骤。
 
-如果要为后续的 `DeepSeek Web Zero-Token` provider 预先采集本机登录态，可运行：
-
-```bash
-node scripts/onboard-deepseek-web.js --profile .browser-profile
-```
-
-该脚本会尝试附加到当前 `.browser-profile` 对应的 Chromium DevTools 端点，检查 DeepSeek 页面的 `cookie` / `bearer` / `userAgent` 是否齐全，并仅在本机把结果写入 `queue-server/data/deepseek-web-auth.json`；终端输出只显示脱敏摘要，不会直接打印敏感值。
-如果当前没有可附加的调试浏览器，或 `DevToolsActivePort` 已经过期，可改用：
-
-```bash
-node scripts/onboard-deepseek-web.js --profile .browser-profile --launch-browser
-```
-
-该模式会自动用当前 workspace profile 拉起 Chromium、打开 `https://chat.deepseek.com/`，再做一次登录态捕获；在无图形桌面的环境下会自动尝试启用 `Xvfb`。
-
-完成 onboard 后，可直接用真实登录态做一次最小 provider 验证：
-
-```bash
-node scripts/verify-deepseek-web-provider.js --prompt "Reply with exactly: FCC_DEEPSEEK_OK"
-```
-
-该命令会复用 `queue-server/data/deepseek-web-auth.json` 中保存的本机登录态，直接从 Queue Server 侧发起一次 `DeepSeek Web` 文本请求，并输出脱敏后的 endpoint / responseMode / sessionId / requestId / reply 预览。如果真实接口契约有漂移，可继续叠加 `--endpoint-path`、`--request-body @path/to/body.json`、`--header "K: V"` 或 `--json` 做定点诊断。
-
-## 安装依赖
+### 3. 安装依赖
 
 仓库不是 workspace 模式，需要分别安装：
 
@@ -59,16 +92,16 @@ cd queue-server && npm install
 cd ../web-console && npm install
 ```
 
-## 本地启动
+### 4. 启动服务
 
-启动 Queue Server：
+**Queue Server**（后端）：
 
 ```bash
 cd queue-server
 npm run dev
 ```
 
-启动 Web Console：
+**Web Console**（前端）：
 
 ```bash
 cd web-console
@@ -81,108 +114,129 @@ npm run dev
 npx @coder/code-server --port 8081
 ```
 
-## 端口说明
+### 5. 加载 Chrome 扩展
 
-- Queue Server 优先使用 `8080`
-- 如果 `8080` 已被占用，会自动回退到 `8082`、`8083`…`8090`
-- `8081` 保留给 `code-server`
-- Web Console 固定为 `5173`
+1. 打开 `chrome:///extensions`
+2. 开启**开发者模式**
+3. 选择**加载已解压的扩展程序**
+4. 选择仓库中的 `chromevideo/` 目录
 
-当前实现中，`web-console`、Chrome 扩展、offscreen 页面和 Native Host 都会通过 `/health` 自动发现 Queue Server 的实际端口，因此不需要手动同步 `8080/8082`。
+### 6. 安装 Native Messaging Host
 
-Queue Server 健康检查：
-
-```bash
-curl http://127.0.0.1:8080/health
-```
-
-如果 `8080` 被占用，请查看后端启动日志里实际选择的端口。
-
-## Chrome 扩展
-
-1. 打开 `chrome://extensions`
-2. 开启开发者模式
-3. 选择“加载已解压的扩展程序”
-4. 选择仓库中的 `chromevideo/`
-
-如果要使用扩展中的本地服务启停能力，还需要安装 Native Messaging Host：
+如需使用扩展启停本地服务的能力：
 
 ```bash
 node chromevideo/host/install_host.js
 ```
 
-如果想确认安装结果是否和当前扩展 ID 对齐，建议随后执行：
+然后执行一次环境检查，确认安装结果与当前扩展 ID 对齐：
 
 ```bash
 node validate-environment.js --profile .browser-profile
 ```
 
-安装脚本现在同时支持 Windows 和 Linux：
+---
 
-- Windows：写入 Chrome Native Messaging 对应注册表，并生成 `host.bat`
-- Linux：生成 `host.sh`，并把 manifest 写入常见浏览器目录，以及仓库自带的 `.browser-profile/NativeMessagingHosts/`，例如 `~/.config/google-chrome/NativeMessagingHosts/`
+## DeepSeek Web Zero-Token Provider
 
-执行脚本时需要先从 `chrome://extensions` 里复制当前扩展的 ID。
+这是项目当前的核心专项。目标是在保留扩展 DOM 自动化的同时，新增一条服务端直连 DeepSeek Web 的文本执行通道，降低对页面输入框、发送按钮和回复 DOM 的脆弱依赖。
+
+### 采集本机登录态
+
+```bash
+# 附加到当前 .browser-profile 对应的浏览器
+node scripts/onboard-deepseek-web.js --profile .browser-profile
+
+# 或自动拉起浏览器并采集
+node scripts/onboard-deepseek-web.js --profile .browser-profile --launch-browser
+```
+
+登录态保存在 `queue-server/data/deepseek-web-auth.json`，终端只输出脱敏摘要。
+
+### 验证 provider 可用性
+
+```bash
+node scripts/verify-deepseek-web-provider.js --prompt "Reply with exactly: FCC_DEEPSEEK_OK"
+```
+
+该命令会使用已保存的登录态，从 Queue Server 侧发起一次真实 DeepSeek Web 文本请求，并输出脱敏后的 endpoint、responseMode、sessionId 和回复预览。
+
+### 诊断接口契约漂移
+
+如果真实接口契约有变化，可叠加参数做定点诊断：
+
+```bash
+node scripts/verify-deepseek-web-provider.js \
+  --prompt "test" \
+  --endpoint-path "/api/v0/chat/completion" \
+  --header "X-Custom: value" \
+  --json
+```
+
+更多设计细节见 `doc/deepseek-web-api-conversion-plan-20260418.md`。
+
+---
+
+## 端口说明
+
+| 服务 | 默认端口 | 说明 |
+|---|---|---|
+| Queue Server | `8080` | 若被占用，自动回退到 `8082`~`8090` |
+| code-server | `8081` | 保留端口 |
+| Web Console | `5173` | 固定端口 |
+
+`web-console`、Chrome 扩展、Offscreen 页面和 Native Host 均通过 `/health` 自动发现 Queue Server 实际端口，无需手动同步。
+
+快速验证后端：
+
+```bash
+curl http://127.0.0.1:8080/health
+```
+
+---
 
 ## 常用命令
 
 ```bash
+# 启动开发服务
 cd queue-server && npm run dev
 cd web-console && npm run dev
+
+# 构建与检查
 cd web-console && npm run build
 cd web-console && npm run lint
+
+# 同步扩展默认端口与 manifest 权限
 node scripts/sync-config.js
+
+# 状态报告
+node scripts/dev-status-report.js
 ```
 
-`scripts/sync-config.js` 当前主要用于同步扩展里的默认端口展示和 `manifest.json` 的本地访问权限；运行时端口发现不依赖这个脚本。
-
-## 定时开发任务
-
-如果希望用本机定时任务持续推进开发并执行夜间验证，可以安装仓库自带的 cron 配置：
-
-```bash
-./scripts/install-dev-cron.sh
-```
-
-安装后会创建两类任务：
-
-- 每 5 分钟运行一次自动开发主管：检查当前任务是否仍在运行、是否卡死；没有运行中的任务时自动拉起新的 `codex exec`
-- 每天凌晨 2:20 生成一次 `.workbuddy/auto-nightly-validation.md`
-
-自动开发主管的动态状态保存在 `.workbuddy/autopilot-state.json`，最近一次模型输出保存在 `.workbuddy/autopilot-last-message.md`。
-
-当前自动开发主管还会在单轮 worker 正常结束后自动续跑下一轮，不需要等到下一个 5 分钟窗口；cron 仍然保留，用于健康巡检、卡死恢复和兜底重启。若显式 backlog 暂时跑完，后续轮次会自动转入回归测试、缺陷修复、安装诊断增强或最小可验证功能补齐。
-
-默认情况下，每一轮新任务都会以全新会话启动，只使用当前 prompt 和仓库文件重建上下文，避免历史对话污染；只有在故障恢复、异常处理或明确延续上轮修复时，才会把上一轮日志和模型输出作为恢复上下文带入。
-
-自动开发主管的实际优先级以 `doc/project-roadmap-20260417.md` 为准；如果 roadmap 或状态快照显式引用某个任务设计文档，后续轮次会先读该文档再执行。当前已将 `doc/deepseek-zero-token-integration-20260417.md` 作为最高优先级专项接入计划。
+---
 
 ## 验证建议
 
 至少执行以下检查：
 
 ```bash
+# 语法检查
 node -c queue-server/index.js
 node -c chromevideo/background.js
 node -c chromevideo/offscreen.js
 node -c chromevideo/sidepanel.js
+
+# 端到端测试（扩展 + Native Host + Queue Server + Web Console）
 node test-playwright-e2e.js
 ```
 
-`node test-playwright-e2e.js` 会在干净状态下启动 Chromium + 扩展，验证 Native Host 自动拉起 `Queue Server` / `Web Console`、检查 `/health` 与 offscreen WebSocket，然后在结束后把这两个本地服务停掉。运行前请先确保 `queue-server/node_modules`、`web-console/node_modules`、`.browser-profile`、`Xvfb` 和浏览器可执行文件都已准备好，且 `Queue Server` / `Web Console` 当前未在运行。
+> `test-playwright-e2e.js` 会在干净状态下启动 Chromium + 扩展，验证 Native Host 自动拉起服务、检查 `/health` 与 Offscreen WebSocket，然后自动清理。运行前请确保依赖、`.browser-profile`、Xvfb（无桌面环境时）和浏览器可执行文件已准备好，且 Queue Server / Web Console 当前未运行。
 
-如果正在推进 `DeepSeek Web Zero-Token` provider，建议在运行自动化回归前先执行：
+**推进 DeepSeek Web 专项时的建议验证顺序**：
 
 ```bash
 node scripts/onboard-deepseek-web.js --profile .browser-profile
 node scripts/verify-deepseek-web-provider.js --prompt "Reply with exactly: FCC_DEEPSEEK_OK"
-```
-
-这样可以先确认当前 `.browser-profile` 的登录态仍有效，且服务端 provider 的默认 endpoint / requestBody / headers 契约仍能完成一轮真实文本问答。
-
-如果已安装 `web-console` 依赖，再执行：
-
-```bash
 cd web-console && npm run build
 ```
 
@@ -191,3 +245,42 @@ cd web-console && npm run build
 - Web Console 能正常连接到 Queue Server
 - Chrome 扩展能收到任务并回传结果
 - `/evolve` 保存后，`nodemon` 能自动重启后端
+
+---
+
+## 定时开发任务（可选）
+
+如果希望用本机定时任务持续推进开发并执行夜间验证：
+
+```bash
+./scripts/install-dev-cron.sh
+```
+
+安装后创建两类任务：
+
+- **每 5 分钟**：自动开发主管，检查当前任务是否运行或卡死，空闲时自动拉起新的 `codex exec`
+- **每天凌晨 2:20**：生成 `.workbuddy/auto-nightly-validation.md`
+
+自动开发主管状态保存在 `.workbuddy/autopilot-state.json`，最近一次模型输出保存在 `.workbuddy/autopilot-last-message.md`。
+
+默认每轮新任务以全新会话启动，避免历史对话污染；只有在故障恢复或明确延续修复时，才会带入上一轮日志。实际优先级以 `doc/project-roadmap-20260417.md` 为准。
+
+---
+
+## 设计文档
+
+| 文档 | 内容 |
+|---|---|
+| `doc/design-doc-v0.1.md` | 整体架构设计 |
+| `doc/project-roadmap-20260417.md` | 项目路线图与优先级 |
+| `doc/deepseek-zero-token-integration-20260417.md` | DeepSeek Web Zero-Token 接入计划 |
+| `doc/deepseek-web-api-conversion-plan-20260418.md` | DeepSeek Web API 化详细方案 |
+| `doc/chromevideo-extension-plan.md` | 扩展开发计划 |
+| `doc/chromevideo-extension-phase1-changelog.md` | 扩展 Phase 1~4 变更记录 |
+| `doc/任务列表.md` | 中文任务跟踪 |
+
+---
+
+## 许可证
+
+MIT

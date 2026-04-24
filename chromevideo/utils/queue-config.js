@@ -92,9 +92,6 @@
     buildQueueServerTarget,
     clearQueueServerCache,
     discoverQueueServer,
-    probeQueueServer,
-    features: {
-      enableAutoEvolve: false
-    }
+    probeQueueServer
   };
 })(globalThis);
