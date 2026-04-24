@@ -32,6 +32,7 @@
         "https://chat.deepseek.com/*"
       ],
       "js": [
+        "content-scripts/auto-open-sidepanel.js",
         "utils/dom-helpers.js",
         "utils/anti-detection.js",
         "readers/page-state-reader.js",
@@ -45,7 +46,7 @@
         "controllers/prompt-controller.js",
         "content.js"
       ],
-      "run_at": "document_idle"
+      "run_at": "document_start"
     }
   ]
 }

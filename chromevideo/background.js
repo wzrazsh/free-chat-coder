@@ -6,6 +6,36 @@ chrome.sidePanel
   .setPanelBehavior({ openPanelOnActionClick: true })
   .catch((err) => console.error('[SW] Failed to set sidePanel behavior:', err));
 
+// ── 自动打开侧边栏 ──
+// 预先为 DeepSeek 页面设置侧边栏可用状态
+function setupAutoOpenSidePanel() {
+  chrome.tabs.onUpdated.addListener((tabId, info, tab) => {
+    if (info.status === 'complete' && tab.url && tab.url.includes('chat.deepseek.com')) {
+      chrome.sidePanel.setOptions({
+        tabId: tabId,
+        path: 'sidepanel.html',
+        enabled: true
+      }).catch((err) => {
+        console.error('[SW] Failed to set side panel options:', err);
+      });
+    }
+  });
+}
+
+// 等待 Service Worker 就绪后设置监听器
+chrome.runtime.onStartup.addListener(() => {
+  console.log('[SW] Browser started, setting up auto-open side panel');
+  setupAutoOpenSidePanel();
+});
+
+chrome.runtime.onInstalled.addListener(() => {
+  console.log('[SW] Extension installed/updated, setting up auto-open side panel');
+  setupAutoOpenSidePanel();
+});
+
+// 立即设置监听器（对于常规加载场景）
+setupAutoOpenSidePanel();
+
 // ── Keep-Alive Alarm：防止 MV3 Service Worker 休眠 ──
 // MV3 SW 在闲置 30 秒后会休眠，导致 "Receiving end does not exist" 错误
 const KEEP_ALIVE_ALARM_NAME = 'solo-coder-keep-alive';
@@ -1215,6 +1245,27 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       }
     });
     return true;
+  }
+  // ── 自动打开侧边栏（通过 content script 触发）──
+  else if (msg.type === 'open_sidepanel') {
+    if (sender && sender.tab && sender.tab.id) {
+      const tabId = sender.tab.id;
+      // 必须同步调用，否则会丢失 user gesture 导致 "may only be called in response to a user gesture"
+      chrome.sidePanel.setOptions({
+        tabId: tabId,
+        path: 'sidepanel.html',
+        enabled: true
+      }).catch((err) => {
+        console.error('[SW] Failed to set side panel options:', err);
+      });
+      
+      chrome.sidePanel.open({ tabId: tabId }).then(() => {
+        console.log('[SW] Side panel auto-opened via content script for tab:', tabId);
+      }).catch((err) => {
+        console.error('[SW] Failed to auto-open side panel:', err);
+      });
+    }
+    sendResponse({ received: true });
   }
   return false;
 });
