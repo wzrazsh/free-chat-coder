@@ -6,6 +6,7 @@
 const HOST_NAME = "com.trae.freechatcoder.host";
 let port = null;
 let statusInterval = null;
+let reconnectInterval = null;
 let autoScrollEnabled = true;
 let pendingConfirms = [];
 let confirmPollInterval = null;
@@ -317,6 +318,7 @@ async function activateConversationFromUi(conversationId) {
 }
 
 function createNewConversationFromUi() {
+  resetLogArea();
   showTyping();
   chrome.runtime.sendMessage({ type: 'start_extension_conversation' }, async (response) => {
     hideTyping();
@@ -713,13 +715,10 @@ function connectHost() {
       }
       workbench?.setHostConnected(false);
       workbench?.setHostError(message);
-      workbench?.setStatus({
-        queueAlive: false,
-        queuePort: null,
-        webAlive: false
-      });
+      // 不重置服务状态 — 进程可能仍在运行，host 重连后会自动更新
       updateConnectionUI(false);
       port = null;
+      startReconnectTimer();
     });
   } catch (err) {
     document.getElementById('error').textContent = 'Connection Error: ' + err.message;
@@ -776,6 +775,24 @@ function sendCommand(command) {
   }
 }
 
+function startReconnectTimer() {
+  if (reconnectInterval) return;
+  reconnectInterval = setInterval(() => {
+    if (port) {
+      stopReconnectTimer();
+      return;
+    }
+    connectHost();
+  }, 10000);
+}
+
+function stopReconnectTimer() {
+  if (reconnectInterval) {
+    clearInterval(reconnectInterval);
+    reconnectInterval = null;
+  }
+}
+
 // ══════════════════════════════════════════
 //  监听 background 消息（任务更新、聊天回复）
 // ══════════════════════════════════════════
@@ -819,7 +836,8 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     workbench?.setStatus({
       queueAlive: msg.queueAlive,
       queuePort: msg.queueServerPort,
-      webAlive: msg.webAlive
+      webAlive: msg.webAlive,
+      nativeHostAvailable: msg.nativeHostAvailable
     });
   }
   else if (msg.type === 'service_bootstrap_status') {
@@ -887,11 +905,15 @@ loadEvolveState().then(() => {
 
   if (port) {
     sendCommand('status');
-    // 侧边栏常驻：每 3 秒轮询状态
-    statusInterval = setInterval(() => {
-      if (port) sendCommand('status');
-    }, 3000);
   }
+
+  // 侧边栏常驻：每 3 秒轮询状态（仅通过 native messaging 获取）
+  statusInterval = setInterval(() => {
+    if (port) {
+      sendCommand('status');
+    }
+    // host 断开时不自动检测，保留最后已知状态
+  }, 3000);
 
   confirmPollInterval = setInterval(() => {
     fetchPendingConfirms();
@@ -919,4 +941,5 @@ window.addEventListener('unload', () => {
   workbench?.destroy();
   if (statusInterval) clearInterval(statusInterval);
   if (confirmPollInterval) clearInterval(confirmPollInterval);
+  stopReconnectTimer();
 });

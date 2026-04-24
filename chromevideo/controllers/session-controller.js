@@ -27,7 +27,10 @@ window.SessionController = {
     const newChatBtn =
       window.DOMHelpers.findElementByText('div, button', '开启新对话') ||
       window.DOMHelpers.findElementByText('div, button', '新对话') ||
-      window.DOMHelpers.findElementByText('div, button', '开始新对话');
+      window.DOMHelpers.findElementByText('div, button', '开始新对话') ||
+      window.DOMHelpers.findElementByText('div, button', 'New chat') ||
+      window.DOMHelpers.findElementByText('div, button', 'New Chat') ||
+      window.DOMHelpers.findElementByText('div, button', '新建聊天');
 
     if (!newChatBtn) {
       return { success: false, error: 'NewChatButtonNotFound: Could not find the new chat button' };

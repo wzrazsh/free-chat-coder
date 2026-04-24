@@ -503,9 +503,6 @@ class AutoEvolveController {
 // 创建全局控制器实例
 const autoEvolveController = new AutoEvolveController();
 
-// ==================== 心跳检测系统 ====================
-const HEARTBEAT_ALARM_NAME = 'solo-coder-service-heartbeat';
-const HEARTBEAT_PERIOD_MINUTES = 0.5; // 30 秒
 const WEB_CONSOLE_PORT = 5173;
 const SERVICE_BOOTSTRAP_STATUS_KEY = 'serviceBootstrapStatus';
 const BACKGROUND_RUNTIME_REENTRY_MS = 15000;
@@ -513,30 +510,34 @@ let lastHeartbeatStatus = { queue: false, queuePort: null, web: false };
 let lastServiceBootstrapStatus = null;
 let serviceBootstrapPromise = null;
 let lastBackgroundRuntimeAt = 0;
+let nativeHostAvailable = null; // null=unchecked, true=available, false=unavailable
 let backgroundRuntimePromise = null;
 
 /**
  * 发布最新服务状态，供 popup / sidepanel 立即刷新。
  */
-function publishHeartbeatStatus(queueAlive, queueServerPort, webAlive, force = false) {
+function publishHeartbeatStatus(queueAlive, queueServerPort, webAlive, nativeHostAvail, force = false) {
+  const nhAvailable = nativeHostAvail !== undefined ? nativeHostAvail : nativeHostAvailable;
   const statusChanged =
     force ||
     lastHeartbeatStatus.queue !== queueAlive ||
     lastHeartbeatStatus.web !== webAlive ||
-    lastHeartbeatStatus.queuePort !== queueServerPort;
+    lastHeartbeatStatus.queuePort !== queueServerPort ||
+    lastHeartbeatStatus.nativeHostAvailable !== nhAvailable;
 
   if (!statusChanged) {
     return;
   }
 
-  console.log('[Heartbeat] Status changed - queue:', queueAlive, 'port:', queueServerPort, 'web:', webAlive);
-  lastHeartbeatStatus = { queue: queueAlive, queuePort: queueServerPort, web: webAlive };
+  console.log('[Heartbeat] Status changed - queue:', queueAlive, 'port:', queueServerPort, 'web:', webAlive, 'nativeHost:', nhAvailable);
+  lastHeartbeatStatus = { queue: queueAlive, queuePort: queueServerPort, web: webAlive, nativeHostAvailable: nhAvailable };
 
   chrome.runtime.sendMessage({
     type: 'heartbeat_status',
     queueAlive,
     queueServerPort,
-    webAlive
+    webAlive,
+    nativeHostAvailable: nhAvailable
   }).catch(() => {});
 }
 
@@ -672,7 +673,7 @@ async function sendNativeHostCommand(command, timeoutMs = 7000) {
 /**
  * 检测端口是否在监听 (使用 fetch)
  */
-async function checkPort(port) {
+async function checkPort(port, strict = false) {
   try {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 3000);
@@ -681,10 +682,50 @@ async function checkPort(port) {
       method: 'HEAD'
     });
     clearTimeout(timeoutId);
-    return response.ok || response.status < 500;
+    const portOpen = response.ok || response.status < 500;
+
+    if (!portOpen || !strict) {
+      return portOpen;
+    }
+
+    // Strict mode: verify Vite dev server by checking response body
+    try {
+      const getController = new AbortController();
+      const getTimeout = setTimeout(() => getController.abort(), 2000);
+      const getResponse = await fetch(`http://localhost:${port}`, {
+        signal: getController.signal,
+        method: 'GET'
+      });
+      clearTimeout(getTimeout);
+      const text = await getResponse.text();
+      return text.includes('vite') || text.includes('@vite/client') || text.includes('VITE');
+    } catch {
+      return false;
+    }
   } catch (err) {
     return false;
   }
+}
+
+/**
+ * 一次性探测 Native Host 是否可用，缓存结果供后续流程使用。
+ */
+async function checkNativeHostAvailable() {
+  if (nativeHostAvailable !== null) {
+    return nativeHostAvailable;
+  }
+
+  try {
+    const port = chrome.runtime.connectNative(HOST_NAME);
+    port.disconnect();
+    nativeHostAvailable = true;
+    console.log('[Heartbeat] Native Host is available');
+  } catch (error) {
+    nativeHostAvailable = false;
+    console.log('[Heartbeat] Native Host not available:', error.message || error);
+  }
+
+  return nativeHostAvailable;
 }
 
 async function checkQueueServer() {
@@ -716,23 +757,6 @@ function getBootstrapCommandLabel(command) {
 }
 
 /**
- * 确保定时心跳通过 alarms API 重新唤醒 MV3 service worker。
- */
-async function ensureHeartbeatAlarm() {
-  const existingAlarm = await chrome.alarms.get(HEARTBEAT_ALARM_NAME);
-  if (existingAlarm) {
-    return;
-  }
-
-  await chrome.alarms.create(HEARTBEAT_ALARM_NAME, {
-    delayInMinutes: HEARTBEAT_PERIOD_MINUTES,
-    periodInMinutes: HEARTBEAT_PERIOD_MINUTES
-  });
-
-  console.log('[Heartbeat] Alarm scheduled');
-}
-
-/**
  * 浏览器启动后立即尝试自愈本地服务，并把结果保存到 storage 里供 UI 诊断。
  */
 async function ensureLocalServices(reason = 'heartbeat') {
@@ -760,24 +784,42 @@ async function ensureLocalServices(reason = 'heartbeat') {
 
       if (!queueAlive) {
         attemptedCommands.push('start_queue');
-        console.log('[Heartbeat] Queue Server not responding, attempting start...');
-        const result = await sendNativeHostCommand('start_queue');
-        commandResults.push({
-          command: 'start_queue',
-          ok: result.ok,
-          error: result.error || null
-        });
+        if (nativeHostAvailable) {
+          console.log('[Heartbeat] Queue Server not responding, attempting start via Native Host...');
+          const result = await sendNativeHostCommand('start_queue');
+          commandResults.push({
+            command: 'start_queue',
+            ok: result.ok,
+            error: result.error || null
+          });
+        } else {
+          console.log('[Heartbeat] Queue Server not responding, Native Host unavailable — skipping auto-start');
+          commandResults.push({
+            command: 'start_queue',
+            ok: false,
+            error: 'Native Host 未安装，请手动启动: cd queue-server && npm run dev'
+          });
+        }
       }
 
       if (!webAlive) {
         attemptedCommands.push('start_web');
-        console.log('[Heartbeat] Web Console not responding, attempting start...');
-        const result = await sendNativeHostCommand('start_web');
-        commandResults.push({
-          command: 'start_web',
-          ok: result.ok,
-          error: result.error || null
-        });
+        if (nativeHostAvailable) {
+          console.log('[Heartbeat] Web Console not responding, attempting start via Native Host...');
+          const result = await sendNativeHostCommand('start_web');
+          commandResults.push({
+            command: 'start_web',
+            ok: result.ok,
+            error: result.error || null
+          });
+        } else {
+          console.log('[Heartbeat] Web Console not responding, Native Host unavailable — skipping auto-start');
+          commandResults.push({
+            command: 'start_web',
+            ok: false,
+            error: 'Native Host 未安装，请手动启动: cd web-console && npm run dev'
+          });
+        }
       }
 
       const [queueStatusAfter, webAliveAfter] = await Promise.all([
@@ -815,7 +857,12 @@ async function ensureLocalServices(reason = 'heartbeat') {
         : 'Queue Server and Web Console are running.';
 
       if (failedServices.length > 0) {
-        state = failedCommands.length > 0 ? 'error' : 'warning';
+        if (failedCommands.length > 0) {
+          const hasNativeHostError = failedCommands.some((item) => item.error && item.error.includes('Native Host 未安装'));
+          state = hasNativeHostError ? 'warning' : 'error';
+        } else {
+          state = 'warning';
+        }
         message = failedCommands.length > 0
           ? failedCommands.map((item) => `${getBootstrapCommandLabel(item.command)}: ${item.error || 'unknown error'}`).join(' | ')
           : `${failedServices.join(' and ')} still not responding after the auto-start check.`;
@@ -828,6 +875,7 @@ async function ensureLocalServices(reason = 'heartbeat') {
         queueAlive,
         queueServerPort,
         webAlive,
+        nativeHostAvailable,
         attemptedCommands,
         commandResults,
         checkedAt: new Date().toISOString()
@@ -845,6 +893,7 @@ async function ensureLocalServices(reason = 'heartbeat') {
         queueAlive: false,
         queueServerPort: null,
         webAlive: false,
+        nativeHostAvailable,
         attemptedCommands,
         commandResults,
         checkedAt: new Date().toISOString()
@@ -880,8 +929,11 @@ async function ensureOffscreen() {
 async function initializeBackgroundRuntime(reason) {
   console.log('[SW] Initializing background runtime:', reason);
   await ensureOffscreen();
-  await ensureHeartbeatAlarm();
+  await checkNativeHostAvailable();
   await ensureLocalServices(reason);
+
+  const status = lastHeartbeatStatus;
+  publishHeartbeatStatus(status.queue, status.queuePort, status.web, undefined, true);
 }
 
 function scheduleBackgroundRuntimeInitialization(reason, options = {}) {
@@ -938,18 +990,6 @@ chrome.tabs.onCreated.addListener((tab) => {
   }
 
   void scheduleBackgroundRuntimeInitialization('tab-created');
-});
-
-chrome.alarms.onAlarm.addListener((alarm) => {
-  if (alarm.name !== HEARTBEAT_ALARM_NAME) {
-    return;
-  }
-
-  void scheduleBackgroundRuntimeInitialization(`alarm:${alarm.name}`, { force: true });
-});
-
-void ensureHeartbeatAlarm().catch((error) => {
-  console.error('[Heartbeat] Failed to schedule alarm:', error);
 });
 
 // Receive messages from Offscreen or Content Scripts
@@ -1046,6 +1086,22 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         status: null,
         error: error.message || String(error)
       }));
+    return true;
+  }
+  else if (msg.type === 'check_native_host') {
+    nativeHostAvailable = null; // Reset cache to force re-check
+    checkNativeHostAvailable()
+      .then((available) => {
+        publishHeartbeatStatus(
+          lastHeartbeatStatus.queue,
+          lastHeartbeatStatus.queuePort,
+          lastHeartbeatStatus.web,
+          available,
+          true
+        );
+        sendResponse({ available });
+      })
+      .catch((error) => sendResponse({ available: false, error: error.message }));
     return true;
   }
   // 状态查询接口

@@ -6,12 +6,6 @@
         "/home/user/.nvm/versions/node/v22.12.0/lib/node_modules/oh-my-claude-sisyphus/bridge/mcp-server.cjs"
       ]
     },
-    "claude-mem": {
-      "command": "node",
-      "args": [
-        "/home/user/.nvm/versions/node/v22.12.0/lib/node_modules/claude-mem/plugin/scripts/mcp-server.cjs"
-      ]
-    },
     "playwright": {
       "command": "npx",
       "args": [

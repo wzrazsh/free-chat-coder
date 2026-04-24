@@ -87,6 +87,16 @@
   color: #64748b;
 }
 
+.workbench-pill.starting {
+  color: #3b82f6;
+  animation: workbench-pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes workbench-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
 .workbench-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));

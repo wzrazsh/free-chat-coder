@@ -32,7 +32,8 @@
     }
   }
 
-  function getStatusLabel(isAlive) {
+  function getStatusLabel(isAlive, hostConnected) {
+    if (!hostConnected) return '状态未知';
     return isAlive ? '运行中' : '未运行';
   }
 
@@ -47,6 +48,10 @@
 
     if (state === 'error') {
       return 'error';
+    }
+
+    if (state === 'starting') {
+      return 'starting';
     }
 
     return 'neutral';
@@ -111,7 +116,30 @@
     }).join(' · ');
   }
 
+  function getHostLabel(state) {
+    if (state.nativeHostAvailable === null) {
+      return '检测中…';
+    }
+    return state.nativeHostAvailable ? '已安装' : '未安装';
+  }
+
+  function getHostPillClass(state) {
+    if (state.nativeHostAvailable === null) {
+      return 'neutral';
+    }
+    return state.nativeHostAvailable ? 'ok' : 'warn';
+  }
+
   function buildBanner(state) {
+    if (!state.queueAlive && !state.webAlive && state.nativeHostAvailable === false) {
+      return {
+        className: 'warn',
+        title: 'Native Host 未安装',
+        text: 'Queue Server 和 Web Console 未运行，且 Native Host 未安装，无法自动启动服务。',
+        meta: '请手动启动: Queue → cd queue-server && npm run dev | Web → cd web-console && npm run dev'
+      };
+    }
+
     if (state.hostError) {
       return {
         className: 'error',
@@ -126,7 +154,7 @@
         className: 'neutral',
         title: '自动拉起诊断',
         text: '等待后台完成首次服务检查。',
-        meta: '点击“刷新”可立即重新请求一次状态和启动诊断。'
+        meta: '点击”刷新”可立即重新请求一次状态和启动诊断。'
       };
     }
 
@@ -183,8 +211,14 @@
       bootstrapStatus: null,
       hostError: '',
       events: [],
-      hasReceivedStatus: false
+      hasReceivedStatus: false,
+      nativeHostAvailable: null
     };
+
+    function setNativeHostAvailable(available) {
+      state.nativeHostAvailable = available;
+      render();
+    }
 
     let storageListener = null;
 
@@ -203,9 +237,9 @@
           </div>
 
           <div class="workbench-overview">
-            <span class="workbench-pill ${state.queueAlive ? 'ok' : 'warn'}">Queue ${escapeHtml(getStatusLabel(state.queueAlive))}</span>
-            <span class="workbench-pill ${state.webAlive ? 'ok' : 'warn'}">Web ${escapeHtml(getStatusLabel(state.webAlive))}</span>
-            <span class="workbench-pill ${state.hostConnected ? 'ok' : 'error'}">Host ${escapeHtml(state.hostConnected ? '已连接' : '未连接')}</span>
+            <span class="workbench-pill ${state.hostConnected && state.queueAlive ? 'ok' : 'warn'}">Queue ${escapeHtml(getStatusLabel(state.queueAlive, state.hostConnected))}</span>
+            <span class="workbench-pill ${state.hostConnected && state.webAlive ? 'ok' : 'warn'}">Web ${escapeHtml(getStatusLabel(state.webAlive, state.hostConnected))}</span>
+            <span class="workbench-pill ${getHostPillClass(state)}">Host ${escapeHtml(getHostLabel(state))}</span>
           </div>
 
           <div class="workbench-grid">
@@ -214,7 +248,7 @@
                 <div>
                   <h5>Queue Server</h5>
                   <div class="workbench-card-meta">
-                    <span>${escapeHtml(getStatusLabel(state.queueAlive))}</span>
+                    <span>${escapeHtml(getStatusLabel(state.queueAlive, state.hostConnected))}</span>
                     <span>监听端口 ${escapeHtml(queueBadge)}</span>
                   </div>
                 </div>
@@ -231,7 +265,7 @@
                 <div>
                   <h5>Web Console</h5>
                   <div class="workbench-card-meta">
-                    <span>${escapeHtml(getStatusLabel(state.webAlive))}</span>
+                    <span>${escapeHtml(getStatusLabel(state.webAlive, state.hostConnected))}</span>
                     <span>固定端口 :5173</span>
                   </div>
                 </div>
@@ -344,6 +378,9 @@
     }
 
     async function setStatus(nextStatus = {}) {
+      if (nextStatus.nativeHostAvailable !== undefined) {
+        state.nativeHostAvailable = nextStatus.nativeHostAvailable;
+      }
       const normalizedStatus = {
         queueAlive: !!nextStatus.queueAlive,
         queuePort: nextStatus.queuePort || null,
@@ -452,6 +489,7 @@
       setBootstrapStatus,
       setHostConnected,
       setHostError,
+      setNativeHostAvailable,
       syncEvents
     };
   }
