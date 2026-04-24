@@ -25,20 +25,32 @@ window.SessionController = {
   async createSession(params = {}) {
     const { title } = params;
     const newChatBtn =
+      window.DOMHelpers.findElementByText('div, button', '创建新对话') ||
       window.DOMHelpers.findElementByText('div, button', '开启新对话') ||
       window.DOMHelpers.findElementByText('div, button', '新对话') ||
       window.DOMHelpers.findElementByText('div, button', '开始新对话') ||
       window.DOMHelpers.findElementByText('div, button', 'New chat') ||
       window.DOMHelpers.findElementByText('div, button', 'New Chat') ||
-      window.DOMHelpers.findElementByText('div, button', '新建聊天');
+      window.DOMHelpers.findElementByText('div, button', '新建聊天') ||
+      window.DOMHelpers.findElementByText('div, button', '新建会话') ||
+      document.querySelector('button[aria-label*="new" i], button[aria-label*="新" i]');
 
     if (!newChatBtn) {
       return { success: false, error: 'NewChatButtonNotFound: Could not find the new chat button' };
     }
 
+    const pathBefore = window.location.pathname;
     newChatBtn.click();
     console.log('[SessionController] Clicked new chat button.');
     await window.AntiDetection.delay(1200);
+
+    const pathAfter = window.location.pathname;
+    const urlChanged = pathAfter !== pathBefore;
+    const inputVisible = !!document.querySelector('textarea, [contenteditable="true"]');
+
+    if (!urlChanged && !inputVisible) {
+      return { success: false, error: 'SessionCreationFailed: URL did not change and no input visible' };
+    }
 
     return {
       success: true,

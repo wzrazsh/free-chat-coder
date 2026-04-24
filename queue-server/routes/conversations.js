@@ -66,4 +66,18 @@ router.post('/:id/sync', (req, res) => {
   }
 });
 
+router.delete('/:id', (req, res) => {
+  const conversation = conversationStore.deleteConversation(req.params.id);
+  if (!conversation) {
+    return res.status(404).json({ error: 'Conversation not found' });
+  }
+
+  wsHandler.broadcastToWeb({
+    type: 'conversation_deleted',
+    conversationId: req.params.id
+  });
+
+  res.json({ success: true });
+});
+
 module.exports = router;

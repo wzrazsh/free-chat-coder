@@ -366,6 +366,20 @@ function completeBrowserAction({ requestId, status = 'completed', result = null,
   `).run(status, toJson(result), error, timestamp, requestId);
 }
 
+function deleteConversation(id) {
+  const conversation = getConversation(id);
+  if (!conversation) {
+    return null;
+  }
+
+  const transaction = db.transaction(() => {
+    db.prepare('DELETE FROM conversations WHERE id = ?').run(id);
+  });
+
+  transaction();
+  return conversation;
+}
+
 module.exports = {
   createConversation,
   getConversation,
@@ -374,5 +388,6 @@ module.exports = {
   listConversations,
   syncConversation,
   recordBrowserAction,
-  completeBrowserAction
+  completeBrowserAction,
+  deleteConversation
 };

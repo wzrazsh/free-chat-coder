@@ -161,18 +161,18 @@ async function syncConversationWithServer(conversationId, tabId, metadata = {}) 
   });
 }
 
-async function createManagedConversation(tabId) {
+async function createManagedConversation(tabId, modeProfile = 'expert') {
   const createSessionResult = await sendActionToTab(tabId, 'createSession', {});
   if (!createSessionResult || createSessionResult.success === false) {
     throw new Error(createSessionResult?.error || 'Failed to create DeepSeek session');
   }
 
-  await sendActionToTab(tabId, 'setModeProfile', { profile: 'expert' });
+  await sendActionToTab(tabId, 'setModeProfile', { profile: modeProfile });
 
   const conversation = await createConversationRecord({
     deepseekSessionId: createSessionResult?.data?.sessionId || null,
     origin: 'extension',
-    modeProfile: 'expert',
+    modeProfile,
     title: createSessionResult?.data?.title || '扩展会话',
     metadata: {
       createdBy: 'sidepanel',
@@ -1066,7 +1066,8 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   else if (msg.type === 'start_extension_conversation') {
     ensureDeepSeekTab()
       .then(async (tabId) => {
-        const conversation = await createManagedConversation(tabId);
+        const modeProfile = msg.modeProfile || 'expert';
+        const conversation = await createManagedConversation(tabId, modeProfile);
         const syncResult = await syncConversationWithServer(conversation.id, tabId, {
           createdBy: 'sidepanel_button'
         });
@@ -1088,7 +1089,9 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     processSidepanelChat({
       requestId,
       prompt: msg.prompt,
-      conversationId: msg.conversationId || null
+      conversationId: msg.conversationId || null,
+      modeProfile: msg.modeProfile,
+      attachments: msg.attachments
     });
     sendResponse({ accepted: true, requestId, conversationId: msg.conversationId || null });
     return false;
@@ -1173,6 +1176,16 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       });
     });
     return true; // 异步响应
+  }
+  else if (msg.type === 'upload_attachment') {
+    ensureDeepSeekTab()
+      .then(async (tabId) => {
+        const result = await sendActionToTab(tabId, 'uploadAttachment', msg.attachment);
+        return result;
+      })
+      .then((result) => sendResponse(result))
+      .catch((error) => sendResponse({ success: false, error: error.message }));
+    return true;
   }
   else if (msg.action === 'captureVisibleTab') {
     chrome.tabs.captureVisibleTab(null, { format: 'png' }, (dataUrl) => {
@@ -1295,12 +1308,23 @@ async function forwardAutoEvolveRequest(evolutionRequest) {
 //  Side Panel 聊天消息处理
 // ═══════════════════════════════════════════════════
 
-async function processSidepanelChat({ requestId, prompt, conversationId }) {
+async function processSidepanelChat({ requestId, prompt, conversationId, modeProfile, attachments }) {
   try {
     const targetTabId = await ensureDeepSeekTab();
     const conversation = await ensureManagedConversation(targetTabId, conversationId);
 
-    await sendActionToTab(targetTabId, 'setModeProfile', { profile: 'expert' });
+    await sendActionToTab(targetTabId, 'setModeProfile', { profile: modeProfile || 'expert' });
+
+    if (attachments && attachments.length > 0) {
+      for (const attachment of attachments) {
+        await sendActionToTab(targetTabId, 'uploadAttachment', {
+          type: attachment.type || 'application/octet-stream',
+          data: attachment.base64,
+          filename: attachment.name,
+          mimeType: attachment.type || 'application/octet-stream'
+        });
+      }
+    }
 
     const response = await sendActionToTab(targetTabId, 'submitPrompt', {
       prompt,

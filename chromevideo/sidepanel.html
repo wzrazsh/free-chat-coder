@@ -400,6 +400,7 @@
       border-radius: 999px;
     }
     .conversation-chip {
+      position: relative;
       min-width: 140px;
       max-width: 180px;
       padding: 10px 12px;
@@ -421,6 +422,33 @@
       color: var(--text-primary);
       box-shadow: 0 0 0 1px rgba(99,102,241,0.15) inset;
     }
+    .conversation-chip-delete {
+      position: absolute;
+      top: 4px;
+      right: 4px;
+      width: 18px;
+      height: 18px;
+      border: none;
+      border-radius: 50%;
+      background: rgba(239,68,68,0.8);
+      color: #fff;
+      font-size: 10px;
+      cursor: pointer;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      line-height: 1;
+      padding: 0;
+      transition: all 0.15s;
+      z-index: 1;
+    }
+    .conversation-chip:hover .conversation-chip-delete {
+      display: flex;
+    }
+    .conversation-chip-delete:hover {
+      background: var(--red);
+      transform: scale(1.1);
+    }
     .conversation-chip-title {
       font-size: 12px;
       font-weight: 600;
@@ -440,6 +468,106 @@
       font-size: 11px;
       color: var(--text-muted);
       padding: 4px 0 2px;
+    }
+
+    /* ── Mode selector ── */
+    .mode-selector {
+      display: flex;
+      gap: 0;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      overflow: hidden;
+    }
+    .mode-option {
+      padding: 4px 10px;
+      font-size: 11px;
+      border: none;
+      background: var(--bg-card);
+      color: var(--text-muted);
+      cursor: pointer;
+      transition: all 0.15s;
+      font-family: inherit;
+    }
+    .mode-option:not(:last-child) {
+      border-right: 1px solid var(--border);
+    }
+    .mode-option.active {
+      background: var(--accent);
+      color: #fff;
+    }
+    .mode-option:hover:not(.active) {
+      background: var(--bg-card-hover);
+      color: var(--text-primary);
+    }
+
+    /* ── Attachment styles ── */
+    .attach-btn {
+      width: 42px;
+      height: 42px;
+      border: none;
+      border-radius: var(--radius-sm);
+      background: var(--bg-card);
+      color: var(--text-secondary);
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 18px;
+      transition: all 0.15s;
+      flex-shrink: 0;
+    }
+    .attach-btn:hover {
+      background: var(--bg-card-hover);
+      color: var(--accent-light);
+    }
+    #attachment-preview {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      padding: 0 0 8px 0;
+    }
+    .attachment-preview-item {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 4px 8px;
+      font-size: 11px;
+      max-width: 160px;
+    }
+    .attachment-preview-item .name {
+      color: var(--text-primary);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      flex: 1;
+    }
+    .attachment-preview-item .size {
+      color: var(--text-muted);
+      flex-shrink: 0;
+    }
+    .attachment-preview-item .delete-attachment {
+      width: 16px;
+      height: 16px;
+      border: none;
+      border-radius: 50%;
+      background: rgba(239,68,68,0.7);
+      color: #fff;
+      font-size: 9px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 0;
+      line-height: 1;
+      transition: all 0.15s;
+      flex-shrink: 0;
+    }
+    .attachment-preview-item .delete-attachment:hover {
+      background: var(--red);
+      transform: scale(1.1);
     }
 
     /* 打字指示器 */
@@ -691,6 +819,10 @@
     <div class="conversation-strip">
       <div class="conversation-strip-head">
         <span class="conversation-strip-title">扩展会话</span>
+        <div class="mode-selector">
+          <button class="mode-option" data-mode="quick">快速</button>
+          <button class="mode-option active" data-mode="expert">专家</button>
+        </div>
         <div style="display:flex;align-items:center;gap:8px;">
           <span class="conversation-strip-meta" id="conversation-strip-meta">0 个会话</span>
           <button class="btn btn-link" id="create-conversation" style="padding:4px 10px;">新建</button>
@@ -711,10 +843,15 @@
 
     <!-- 输入区域 -->
     <div class="input-area">
+      <div id="attachment-preview"></div>
       <div class="input-row">
         <textarea id="chat-input" placeholder="输入消息，按 Enter 发送..." rows="1"></textarea>
+        <button class="attach-btn" id="btn-attach" title="上传文件">📎</button>
         <button class="send-btn" id="btn-send" title="发送">➤</button>
       </div>
+      <input type="file" id="file-input" multiple
+        accept=".txt,.md,.json,.js,.ts,.py,.html,.css,.csv,.xml,.yaml,.yml,.sh,.pdf,.doc,.docx,.png,.jpg,.jpeg,.gif,.svg"
+        style="display:none">
     </div>
   </div>
 

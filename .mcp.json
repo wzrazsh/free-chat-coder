@@ -14,7 +14,9 @@
         "--executable-path",
         "/home/user/.cache/ms-playwright/chromium-1217/chrome-linux64/chrome",
         "--load-extension",
-        "/mnt/e/workspace/free-chat-coder/chromevideo"
+        "/mnt/e/workspace/free-chat-coder/chromevideo",
+        "--user-data-dir",
+        "/mnt/e/workspace/free-chat-coder/.browser-profile"
       ]
     }
   }

@@ -13,6 +13,8 @@ let confirmPollInterval = null;
 const respondingConfirmIds = new Set();
 let extensionConversations = [];
 let activeConversationId = null;
+let selectedModeProfile = 'expert';
+let pendingAttachments = [];
 let workbench = null;
 
 // 自动进化状态
@@ -209,11 +211,12 @@ function renderConversationList() {
     const updatedAt = escapeHtml(formatConversationTime(conversation.updatedAt));
 
     return `
-      <button class="conversation-chip${activeClass}" data-conversation-id="${escapeHtml(conversation.id)}">
+      <div class="conversation-chip${activeClass}" data-conversation-id="${escapeHtml(conversation.id)}" role="button" tabindex="0">
+        <button class="conversation-chip-delete" data-conversation-id="${escapeHtml(conversation.id)}" title="删除会话">×</button>
         <div class="conversation-chip-title">${title}</div>
         <div class="conversation-chip-meta">${preview}</div>
         <div class="conversation-chip-meta">${updatedAt}</div>
-      </button>
+      </div>
     `;
   }).join('');
 }
@@ -297,6 +300,7 @@ async function activateConversationFromUi(conversationId) {
 
   activeConversationId = conversationId;
   renderConversationList();
+  clearAttachments();
   showTyping();
 
   chrome.runtime.sendMessage({ type: 'activate_conversation', conversationId }, async (response) => {
@@ -319,8 +323,11 @@ async function activateConversationFromUi(conversationId) {
 
 function createNewConversationFromUi() {
   resetLogArea();
+  clearAttachments();
   showTyping();
-  chrome.runtime.sendMessage({ type: 'start_extension_conversation' }, async (response) => {
+  chrome.runtime.sendMessage(
+    { type: 'start_extension_conversation', modeProfile: selectedModeProfile },
+    async (response) => {
     hideTyping();
 
     if (chrome.runtime.lastError) {
@@ -340,15 +347,159 @@ function createNewConversationFromUi() {
 }
 
 conversationList.addEventListener('click', (event) => {
-  const button = event.target.closest('[data-conversation-id]');
-  if (!button) {
+  const deleteBtn = event.target.closest('.conversation-chip-delete');
+  if (deleteBtn) {
+    deleteConversationFromUi(deleteBtn.dataset.conversationId);
     return;
   }
 
-  activateConversationFromUi(button.dataset.conversationId);
+  const chip = event.target.closest('[data-conversation-id]');
+  if (!chip) {
+    return;
+  }
+
+  activateConversationFromUi(chip.dataset.conversationId);
+});
+
+conversationList.addEventListener('keydown', (event) => {
+  if (event.key === 'Enter' || event.key === ' ') {
+    const chip = event.target.closest('[data-conversation-id]');
+    if (chip) {
+      event.preventDefault();
+      activateConversationFromUi(chip.dataset.conversationId);
+    }
+  }
 });
 
 document.getElementById('create-conversation').addEventListener('click', createNewConversationFromUi);
+
+async function deleteConversationFromUi(conversationId) {
+  if (!conversationId) return;
+  if (!confirm('确认移除当前会话监控？')) return;
+
+  try {
+    const response = await queueFetch(`/conversations/${conversationId}`, {
+      method: 'DELETE'
+    });
+
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`);
+    }
+
+    extensionConversations = extensionConversations.filter(c => c.id !== conversationId);
+    if (activeConversationId === conversationId) {
+      activeConversationId = extensionConversations[0]?.id || null;
+    }
+    renderConversationList();
+    if (activeConversationId) {
+      await loadConversationMessages(activeConversationId);
+    } else {
+      resetLogArea();
+      addLogMessage('system', '所有会话已删除');
+    }
+  } catch (error) {
+    addLogMessage('system', `❌ 删除会话失败: ${error.message || error}`);
+  }
+}
+
+// Mode selector
+document.querySelectorAll('.mode-option').forEach((btn) => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.mode-option').forEach((b) => b.classList.remove('active'));
+    btn.classList.add('active');
+    selectedModeProfile = btn.dataset.mode;
+  });
+});
+
+// File upload
+document.getElementById('btn-attach')?.addEventListener('click', () => {
+  document.getElementById('file-input')?.click();
+});
+
+document.getElementById('file-input')?.addEventListener('change', async (event) => {
+  const files = event.target.files;
+  if (!files || !files.length) return;
+
+  const MAX_FILE_SIZE = 20 * 1024 * 1024;
+  const MAX_TOTAL_SIZE = 50 * 1024 * 1024;
+
+  for (const file of files) {
+    if (file.size > MAX_FILE_SIZE) {
+      addLogMessage('system', `❌ 文件过大: ${file.name} (最大 20MB)`);
+      continue;
+    }
+
+    const currentTotal = pendingAttachments.reduce((sum, a) => sum + a.size, 0);
+    if (currentTotal + file.size > MAX_TOTAL_SIZE) {
+      addLogMessage('system', '❌ 附件总大小超过 50MB 限制');
+      break;
+    }
+
+    try {
+      const base64 = await fileToBase64(file);
+      pendingAttachments.push({
+        name: file.name,
+        size: file.size,
+        type: file.type,
+        base64: base64.split(',')[1] || base64
+      });
+    } catch (err) {
+      addLogMessage('system', `❌ 读取文件失败: ${file.name}`);
+    }
+  }
+
+  event.target.value = '';
+  renderAttachmentPreviews();
+});
+
+function fileToBase64(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
+function renderAttachmentPreviews() {
+  const container = document.getElementById('attachment-preview');
+  if (!container) return;
+  if (pendingAttachments.length === 0) {
+    container.innerHTML = '';
+    return;
+  }
+
+  container.innerHTML = pendingAttachments.map((att, index) => {
+    const sizeStr = att.size > 1024 * 1024
+      ? (att.size / (1024 * 1024)).toFixed(1) + ' MB'
+      : (att.size / 1024).toFixed(1) + ' KB';
+    return `
+      <div class="attachment-preview-item">
+        <span class="name">${escapeHtml(att.name)}</span>
+        <span class="size">${sizeStr}</span>
+        <button class="delete-attachment" data-index="${index}" title="移除附件">×</button>
+      </div>
+    `;
+  }).join('');
+}
+
+function removeAttachment(index) {
+  pendingAttachments.splice(index, 1);
+  renderAttachmentPreviews();
+}
+
+function clearAttachments() {
+  pendingAttachments = [];
+  renderAttachmentPreviews();
+}
+
+// Attachment preview click delegation
+document.getElementById('attachment-preview')?.addEventListener('click', (event) => {
+  const deleteBtn = event.target.closest('.delete-attachment');
+  if (deleteBtn) {
+    removeAttachment(parseInt(deleteBtn.dataset.index, 10));
+  }
+});
 
 /**
  * 添加消息到日志区域
@@ -490,25 +641,36 @@ function handleSend() {
   showTyping();
 
   // 发送给 background.js
-  chrome.runtime.sendMessage(
-    { type: 'sidepanel_chat', prompt: text, conversationId: activeConversationId },
-    (response) => {
-      if (chrome.runtime.lastError) {
-        hideTyping();
-        isSending = false;
-        sendBtn.disabled = false;
-        addLogMessage('system', '❌ 发送失败: ' + chrome.runtime.lastError.message);
-        return;
-      }
+  const message = {
+    type: 'sidepanel_chat',
+    prompt: text,
+    conversationId: activeConversationId,
+    modeProfile: selectedModeProfile
+  };
 
-      if (!response || response.accepted !== true) {
-        hideTyping();
-        isSending = false;
-        sendBtn.disabled = false;
-        addLogMessage('system', '❌ ' + (response?.error || '发送失败'));
-      }
+  if (pendingAttachments.length > 0) {
+    message.attachments = pendingAttachments;
+  }
+
+  chrome.runtime.sendMessage(message, (response) => {
+    if (chrome.runtime.lastError) {
+      hideTyping();
+      isSending = false;
+      sendBtn.disabled = false;
+      addLogMessage('system', '❌ 发送失败: ' + chrome.runtime.lastError.message);
+      return;
     }
-  );
+
+    if (!response || response.accepted !== true) {
+      hideTyping();
+      isSending = false;
+      sendBtn.disabled = false;
+      addLogMessage('system', '❌ ' + (response?.error || '发送失败'));
+    }
+  });
+
+  // Clear attachments after send
+  clearAttachments();
 }
 
 sendBtn.addEventListener('click', handleSend);
