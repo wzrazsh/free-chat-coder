@@ -1,0 +1,70 @@
+# Chrome 插件开发工具项目评估与后续方向
+
+更新日期：2026-04-17
+
+## 当前阶段判断
+
+项目已经越过“原型能跑”的阶段，进入“稳定化 + 产品化”阶段。当前仓库已经具备完整的基础闭环：
+
+- `chromevideo/` 提供 Chrome 扩展、offscreen WebSocket、popup、sidepanel、Native Messaging Host。
+- `queue-server/` 已具备任务队列、会话同步、动作执行、自动进化、热重载。
+- `web-console/` 已具备任务查看、审批、会话浏览和代码编辑能力。
+- Native Host 已补齐 Windows 和 Linux 安装支持。
+
+从能力面看，这已经是一个“插件版本地开发工具”的雏形，而不是单一自动化脚本。
+
+## 已完成的关键里程碑
+
+1. DeepSeek 页面读写能力、会话切换、截图和附件上传已落地。
+2. 本地任务队列、WebSocket 通道和多轮动作执行已形成闭环。
+3. Web Console 已能承担任务可视化和人工确认入口。
+4. 自动进化、错误上报、扩展热重载和后端热重启已经接上。
+5. Queue Server 端口发现逻辑已统一，Native Host 已新增 Linux 支持。
+
+## 当前最主要的短板
+
+1. 文本任务主链路仍强依赖扩展操作 DeepSeek 页面 DOM，页面结构变化会直接影响任务执行稳定性。
+2. 当前缺少一条可在 Queue Server 内直接执行的 DeepSeek provider，自动进化仍没有摆脱浏览器页面操控依赖。
+3. Native Host、扩展、Queue Server、Web Console 之间的安装和排障路径仍偏开发者视角，普通用户上手成本高。
+4. 自动进化能力已经很强，但缺少更硬的回滚、验证和风险隔离。
+5. 设计文档与现有实现存在偏差，长期维护门槛开始上升。
+
+## 当前优先专项
+
+### P0：引入 DeepSeek Web Zero-Token Provider
+
+目标：在保留扩展 DOM 自动化链路的同时，为项目新增一条 `DeepSeek Web Zero-Token` 文本执行通道，优先承接普通文本任务、自动进化和多轮工具结果回灌，降低对 DeepSeek 页面输入框、发送按钮和回复 DOM 的脆弱依赖。
+
+详细设计与实施步骤：见 `doc/deepseek-zero-token-integration-20260417.md`
+
+首批验收：
+
+1. 建立本地登录态捕获与诊断能力，能安全获取 `cookie` / `bearer` / `userAgent`
+2. 新增 `queue-server/providers/deepseek-web/` 最小 provider，可直接完成文本问答
+3. 自动进化任务可优先走 `deepseek-web`，失败时具备明确诊断或回退策略
+
+## 后续优化方向
+
+### P0：可用性闭环
+
+1. 引入 DeepSeek Web Zero-Token Provider，降低文本任务对页面 DOM 的强依赖。
+2. 增加扩展启动诊断面板，明确显示 Native Host、Queue Server、Web Console 的失败原因。
+3. 提供一键环境自检脚本，覆盖扩展加载、Native Host 安装、端口占用和依赖完整性。
+
+### P1：稳定性与回归防护
+
+1. 建立 Zero-Token provider + 扩展 + Native Host + Queue Server 的端到端回归测试。
+2. 给自动进化链路增加预执行验证、失败回滚和结果审计。
+3. 将关键健康检查和前端构建验证纳入定时任务与夜间巡检。
+
+### P2：产品体验
+
+1. 把 popup / sidepanel 的服务管理能力整合为更明确的“工作台”。
+2. 提供任务模板、工作区配置、日志查看和最近失败记录。
+3. 减少对 DeepSeek DOM 结构变化的脆弱依赖，逐步统一选择器和错误采样。
+
+### P3：工程化
+
+1. 更新设计文档，按当前架构重写组件边界。
+2. 把阶段性结论、验证命令和已知风险沉淀到固定文档。
+3. 逐步收敛动态文件、日志和生成产物，降低工作区噪音。

@@ -1,6 +1,6 @@
 # 重构裁剪执行计划：从自动进化系统收敛为 DeepSeek 本地知识库代理
 
-基于 `doc/refactor-prune-plan-20260425.md` 制定本执行计划。
+基于 `doc/refactor-prune-plan.md` 制定本执行计划。
 
 ---
 

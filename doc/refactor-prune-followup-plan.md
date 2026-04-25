@@ -4,7 +4,7 @@
 
 ## 目标
 
-本文件补充 `refactor-prune-plan-20260425.md` 的执行后收尾项。
+本文件补充 `refactor-prune-plan.md` 的执行后收尾项。
 
 当前提交已经删除了大部分 `evolution/`、`test-validator/`、autopilot/cron 脚本，但审查发现扩展端、Web Console、测试和文档仍保留旧自动进化入口。这些入口会继续误导用户，也会在运行时调用已经不存在的后端能力。
 
@@ -348,12 +348,12 @@ Move-Item -LiteralPath "queue-server\data\evolution-history.json.backup" -Destin
 
 - `README.md`
 - `scripts/dev-status-report.js`
-- `doc/deepseek-zero-token-integration-20260417.md`
-- `doc/deepseek-web-api-conversion-plan-20260418.md`
-- `doc/chromevideo-extension-phase4-changelog.md`
-- `doc/chromevideo-extension-plan.md`
-- `doc/任务列表.md`
-- `doc/进度总结20260412.md`
+- `doc/archive/deepseek-zero-token-integration-20260417.md`
+- `doc/archive/deepseek-web-api-conversion-plan-20260418.md`
+- `doc/archive/chromevideo-extension-phase4-changelog.md`
+- `doc/archive/chromevideo-extension-plan.md`
+- `doc/archive/auto-evolve-task-list.md`
+- `doc/archive/progress-summary-20260412.md`
 
 当前问题：
 
@@ -386,7 +386,7 @@ README 需要调整：
 - 建议在文件顶部加废弃提示：
 
 ```md
-> Deprecated: 本文档描述的是 2026-04-25 前的自动进化/自修改路线，已从当前主线中移除。当前路线以 `doc/refactor-prune-plan-20260425.md` 和 `doc/refactor-prune-plan-20260425-v1.md` 为准。
+> Deprecated: 本文档描述的是 2026-04-25 前的自动进化/自修改路线，已从当前主线中移除。当前路线以 `doc/refactor-prune-plan.md` 和 `doc/refactor-prune-followup-plan.md` 为准。
 ```
 
 验收标准：
