@@ -1,11 +1,26 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { Activity, CheckCircle, Clock, Link2, Plus, XCircle } from 'lucide-react';
+import { type FormEvent, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  Activity,
+  AlertTriangle,
+  CheckCircle,
+  Clock,
+  Link2,
+  Loader2,
+  MessageSquare,
+  Plus,
+  RefreshCcw,
+  Send,
+  Server,
+  Terminal,
+  XCircle,
+} from 'lucide-react';
 import Editor from '@monaco-editor/react';
 import {
   clearDiscoveredQueueServer,
   discoverQueueServer,
   requestQueueServer,
 } from './queueServer';
+import heroAsset from './assets/hero.png';
 
 interface Task {
   id: string;
@@ -55,26 +70,6 @@ interface ConversationMessage {
   createdAt: string;
 }
 
-interface ValidationCheck {
-  name?: string;
-  targetPath?: string | null;
-  command?: string | null;
-  error?: string | null;
-  reason?: string | null;
-}
-
-interface ValidationPhase {
-  success: boolean;
-  phase?: string | null;
-  decision?: string | null;
-  reason?: string | null;
-  checkCount?: number;
-  reportPath?: string | null;
-  failedChecks?: ValidationCheck[];
-}
-
-
-
 interface ApiTestResult {
   status: number;
   statusText: string;
@@ -88,27 +83,29 @@ const API_TEST_PRESETS = [
     label: 'Health',
     method: 'GET',
     path: '/health',
-    body: ''
+    body: '',
   },
   {
     label: 'Tasks',
     method: 'GET',
     path: '/tasks',
-    body: ''
+    body: '',
   },
   {
     label: 'Conversations',
     method: 'GET',
     path: '/conversations?origin=extension&limit=20',
-    body: ''
+    body: '',
   },
   {
     label: 'Create Task',
     method: 'POST',
     path: '/tasks',
-    body: JSON.stringify({ prompt: 'API tester task from web console' }, null, 2)
-  }
+    body: JSON.stringify({ prompt: 'API tester task from web console' }, null, 2),
+  },
 ] as const;
+
+const methodOptions = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'];
 
 const formatApiPayload = (value: unknown) => {
   if (typeof value === 'string') {
@@ -120,6 +117,32 @@ const formatApiPayload = (value: unknown) => {
   } catch {
     return String(value);
   }
+};
+
+const formatDateTime = (value?: string) => {
+  if (!value) {
+    return 'Unknown';
+  }
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return 'Unknown';
+  }
+
+  return date.toLocaleString();
+};
+
+const formatTime = (value?: string) => {
+  if (!value) {
+    return '--:--';
+  }
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return '--:--';
+  }
+
+  return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 };
 
 const upsertTask = (taskList: Task[], nextTask: Task) => {
@@ -155,6 +178,18 @@ const upsertConversation = (conversationList: Conversation[], nextConversation: 
   return nextConversations;
 };
 
+const taskStatusStyles: Record<Task['status'], string> = {
+  pending: 'border-slate-200 bg-slate-50 text-slate-700',
+  processing: 'border-sky-200 bg-sky-50 text-sky-700',
+  completed: 'border-emerald-200 bg-emerald-50 text-emerald-700',
+  failed: 'border-rose-200 bg-rose-50 text-rose-700',
+};
+
+const messageStyles: Record<string, string> = {
+  user: 'border-sky-200 bg-sky-50',
+  assistant: 'border-slate-200 bg-white',
+};
+
 function App() {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [pendingConfirms, setPendingConfirms] = useState<PendingConfirm[]>([]);
@@ -162,7 +197,7 @@ function App() {
   const [activeConversationId, setActiveConversationId] = useState<string>('');
   const [conversationMessages, setConversationMessages] = useState<ConversationMessage[]>([]);
   const [prompt, setPrompt] = useState('');
-const [isConnected, setIsConnected] = useState(false);
+  const [isConnected, setIsConnected] = useState(false);
   const [respondingConfirmId, setRespondingConfirmId] = useState<string | null>(null);
   const [queuePort, setQueuePort] = useState<number | null>(null);
   const [apiTestMethod, setApiTestMethod] = useState('GET');
@@ -182,6 +217,27 @@ const [isConnected, setIsConnected] = useState(false);
   const activeConversation = useMemo(() => {
     return sortedConversations.find((conversation) => conversation.id === activeConversationId) || null;
   }, [activeConversationId, sortedConversations]);
+
+  const sortedTasks = useMemo(() => {
+    return [...tasks].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  }, [tasks]);
+
+  const taskStats = useMemo(() => {
+    return tasks.reduce(
+      (acc, task) => {
+        acc.total += 1;
+        acc[task.status] += 1;
+        return acc;
+      },
+      {
+        total: 0,
+        pending: 0,
+        processing: 0,
+        completed: 0,
+        failed: 0,
+      },
+    );
+  }, [tasks]);
 
   useEffect(() => {
     activeConversationIdRef.current = activeConversationId;
@@ -233,6 +289,14 @@ const [isConnected, setIsConnected] = useState(false);
     const response = await queueRequest(`/conversations/${conversationId}/messages`);
     const data = await response.json();
     setConversationMessages(Array.isArray(data.messages) ? data.messages : []);
+  };
+
+  const refreshAll = async () => {
+    await Promise.all([
+      fetchTasks(),
+      fetchPendingConfirms(),
+      fetchConversations(activeConversationId || undefined),
+    ]);
   };
 
   useEffect(() => {
@@ -318,7 +382,7 @@ const [isConnected, setIsConnected] = useState(false);
     fetchConversationMessages(activeConversationId).catch((err) => console.error('Failed to fetch conversation messages:', err));
   }, [activeConversationId]);
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     if (!prompt.trim()) {
       return;
@@ -330,7 +394,7 @@ const [isConnected, setIsConnected] = useState(false);
       const response = await queueRequest('/tasks', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt, options })
+        body: JSON.stringify({ prompt, options }),
       });
 
       if (!response.ok) {
@@ -354,7 +418,7 @@ const [isConnected, setIsConnected] = useState(false);
       const response = await queueRequest(`/tasks/confirms/${confirmId}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ approved })
+        body: JSON.stringify({ approved }),
       });
 
       if (!response.ok) {
@@ -432,208 +496,251 @@ const [isConnected, setIsConnected] = useState(false);
   const getStatusIcon = (status: Task['status']) => {
     switch (status) {
       case 'completed':
-        return <CheckCircle className="text-green-500" size={20} />;
+        return <CheckCircle className="text-emerald-600" size={18} />;
       case 'processing':
-        return <Activity className="text-blue-500 animate-pulse" size={20} />;
+        return <Activity className="text-sky-600" size={18} />;
       case 'failed':
-        return <XCircle className="text-red-500" size={20} />;
+        return <XCircle className="text-rose-600" size={18} />;
       default:
-        return <Clock className="text-gray-400" size={20} />;
+        return <Clock className="text-slate-500" size={18} />;
     }
-  };
-
-  const getMessageClassName = (role: string) => {
-    if (role === 'user') {
-      return 'bg-blue-50 border-blue-100';
-    }
-    if (role === 'assistant') {
-      return 'bg-white border-gray-200';
-    }
-    return 'bg-amber-50 border-amber-200';
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 text-gray-900 font-sans p-8">
-      <div className="max-w-7xl mx-auto">
-        <header className="flex items-center justify-between mb-8 gap-6">
-          <div className="flex items-center gap-4">
-            <h1 className="text-3xl font-bold tracking-tight">AI Agent Queue Console</h1>
-          </div>
-          <div className="flex items-center gap-2">
-            <span className="text-sm text-gray-500">
-              Queue: {queuePort ? `:${queuePort}` : 'Detecting'}
-            </span>
-            <span className="text-sm font-medium">WS Status:</span>
-            <div className={`h-3 w-3 rounded-full ${isConnected ? 'bg-green-500' : 'bg-red-500'}`} />
-          </div>
-        </header>
-
-        {pendingConfirms.length > 0 && (
-          <div className="bg-amber-50 border border-amber-200 rounded-xl p-6 mb-8">
-            <div className="flex items-center justify-between gap-4 mb-4">
-              <div>
-                <h2 className="text-xl font-semibold text-amber-950">Pending Approvals</h2>
-                <p className="text-sm text-amber-800">Manual confirms are disabled by default unless `MANUAL_CONFIRM=true`.</p>
-              </div>
-              <span className="px-3 py-1 rounded-full text-sm font-medium bg-amber-200 text-amber-950">
-                {pendingConfirms.length} open
-              </span>
+    <div className="min-h-screen bg-[#f5f7f8] text-slate-950">
+      <header className="border-b border-slate-200 bg-white">
+        <div className="mx-auto flex max-w-[1500px] flex-col gap-4 px-4 py-4 sm:px-6 lg:flex-row lg:items-center lg:justify-between">
+          <div className="flex min-w-0 items-center gap-3">
+            <img src={heroAsset} alt="" className="h-11 w-11 rounded-lg border border-slate-200 object-cover" />
+            <div className="min-w-0">
+              <h1 className="truncate text-xl font-semibold tracking-normal text-slate-950">AI Agent Queue Console</h1>
+              <p className="truncate text-sm text-slate-500">Queue orchestration, transcript review, and direct API inspection.</p>
             </div>
+          </div>
 
-            <div className="space-y-3">
-              {pendingConfirms.map((confirm) => {
-                const isResponding = respondingConfirmId === confirm.confirmId;
+          <div className="grid grid-cols-2 gap-2 sm:flex sm:items-center">
+            <div className="flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm">
+              <Server size={16} className="text-slate-500" />
+              <span className="text-slate-500">Queue</span>
+              <span className="font-medium text-slate-900">{queuePort ? `:${queuePort}` : 'Detecting'}</span>
+            </div>
+            <div className="flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm">
+              <span className={`h-2.5 w-2.5 rounded-full ${isConnected ? 'bg-emerald-500' : 'bg-rose-500'}`} />
+              <span className="font-medium text-slate-900">{isConnected ? 'WS online' : 'WS offline'}</span>
+            </div>
+            <button
+              type="button"
+              onClick={() => refreshAll().catch((err) => console.error('Failed to refresh console:', err))}
+              className="inline-flex items-center justify-center gap-2 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-800 transition hover:bg-slate-100"
+              title="Refresh console data"
+            >
+              <RefreshCcw size={16} />
+              Refresh
+            </button>
+          </div>
+        </div>
+      </header>
 
-                return (
-                  <div key={confirm.confirmId} className="bg-white border border-amber-100 rounded-lg p-4 shadow-sm">
-                    <div className="flex items-start justify-between gap-4 mb-3">
-                      <div>
-                        <h3 className="font-medium text-gray-900">{confirm.action}</h3>
-                        <p className="text-sm text-gray-500 font-mono">Confirm ID: {confirm.confirmId}</p>
-                        {confirm.taskId && <p className="text-sm text-gray-500 font-mono">Task ID: {confirm.taskId}</p>}
-                      </div>
-                      <span className="px-3 py-1 rounded-full font-medium bg-red-100 text-red-700">
-                        {(confirm.riskLevel || 'unknown').toUpperCase()}
-                      </span>
-                    </div>
-
-                    {confirm.params && (
-                      <pre className="text-xs text-gray-700 bg-gray-50 border border-gray-200 rounded-lg p-3 overflow-auto mb-3">
-                        {JSON.stringify(confirm.params, null, 2)}
-                      </pre>
-                    )}
-
-                    <div className="flex items-center justify-between gap-4">
-                      <span className="text-xs text-gray-500">
-                        {new Date(confirm.createdAt || confirm.timestamp || Date.now()).toLocaleString()}
-                      </span>
-                      <div className="flex gap-3">
-                        <button
-                          onClick={() => handleConfirmResponse(confirm.confirmId, false)}
-                          disabled={isResponding}
-                          className="px-4 py-2 text-gray-700 font-medium hover:bg-gray-200 rounded-lg transition-colors disabled:opacity-50"
-                        >
-                          Reject
-                        </button>
-                        <button
-                          onClick={() => handleConfirmResponse(confirm.confirmId, true)}
-                          disabled={isResponding}
-                          className="px-4 py-2 bg-amber-600 text-white font-medium rounded-lg hover:bg-amber-700 transition-colors disabled:opacity-50"
-                        >
-                          {isResponding ? 'Submitting...' : 'Approve'}
-                        </button>
-                      </div>
-                    </div>
+      <main className="mx-auto max-w-[1500px] space-y-5 px-4 py-5 sm:px-6">
+        <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+          {[
+            { label: 'Total tasks', value: taskStats.total, icon: Terminal, tone: 'text-slate-700' },
+            { label: 'Processing', value: taskStats.processing, icon: Activity, tone: 'text-sky-700' },
+            { label: 'Pending', value: taskStats.pending, icon: Clock, tone: 'text-amber-700' },
+            { label: 'Failed', value: taskStats.failed, icon: XCircle, tone: 'text-rose-700' },
+            { label: 'Conversations', value: sortedConversations.length, icon: MessageSquare, tone: 'text-emerald-700' },
+          ].map((item) => {
+            const Icon = item.icon;
+            return (
+              <div key={item.label} className="rounded-lg border border-slate-200 bg-white p-4">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <p className="text-xs font-medium uppercase tracking-normal text-slate-500">{item.label}</p>
+                    <p className="mt-1 text-2xl font-semibold text-slate-950">{item.value}</p>
                   </div>
-                );
-              })}
-            </div>
-          </div>
-        )}
+                  <Icon size={22} className={item.tone} />
+                </div>
+              </div>
+            );
+          })}
+        </section>
 
-        <div className="grid grid-cols-1 xl:grid-cols-[320px_minmax(0,1fr)] gap-8">
-          <aside className="space-y-6">
-            <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
-              <div className="flex items-center justify-between gap-3 mb-4">
+        <div className="grid gap-5 xl:grid-cols-[320px_minmax(0,1fr)_390px]">
+          <aside className="space-y-5">
+            <section className="rounded-lg border border-slate-200 bg-white">
+              <div className="flex items-center justify-between gap-3 border-b border-slate-200 px-4 py-3">
                 <div>
-                  <h2 className="text-xl font-semibold">Conversations</h2>
-                  <p className="text-sm text-gray-500">Only extension-managed sessions are shown here.</p>
+                  <h2 className="text-sm font-semibold text-slate-950">Conversations</h2>
+                  <p className="text-xs text-slate-500">Extension-managed sessions</p>
                 </div>
                 <button
-                  onClick={() => fetchConversations(activeConversationId || undefined)}
-                  className="px-3 py-2 text-sm font-medium text-blue-700 bg-blue-50 hover:bg-blue-100 rounded-lg transition-colors"
+                  type="button"
+                  onClick={() => fetchConversations(activeConversationId || undefined).catch((err) => console.error('Failed to refresh conversations:', err))}
+                  className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 text-slate-600 transition hover:bg-slate-100"
+                  title="Refresh conversations"
                 >
-                  Refresh
+                  <RefreshCcw size={15} />
                 </button>
               </div>
 
               {sortedConversations.length === 0 ? (
-                <p className="text-sm text-gray-500">No extension conversations yet. Create one from the extension side panel.</p>
+                <div className="px-4 py-10 text-sm text-slate-500">No extension conversations yet.</div>
               ) : (
-                <div className="space-y-3">
+                <div className="max-h-[640px] overflow-y-auto p-2">
                   {sortedConversations.map((conversation) => {
                     const isActive = conversation.id === activeConversationId;
                     return (
                       <button
                         key={conversation.id}
+                        type="button"
                         onClick={() => setActiveConversationId(conversation.id)}
-                        className={`w-full text-left rounded-xl border p-4 transition-colors ${
+                        className={`mb-2 w-full rounded-lg border p-3 text-left transition ${
                           isActive
-                            ? 'border-blue-300 bg-blue-50 shadow-sm'
-                            : 'border-gray-200 bg-white hover:bg-gray-50'
+                            ? 'border-sky-300 bg-sky-50'
+                            : 'border-transparent bg-white hover:border-slate-200 hover:bg-slate-50'
                         }`}
                       >
-                        <div className="flex items-center justify-between gap-3 mb-2">
-                          <h3 className="font-medium text-gray-900 truncate">{conversation.title || 'Untitled conversation'}</h3>
-                          <span className="text-[11px] px-2 py-1 rounded-full bg-gray-100 text-gray-600 uppercase">
+                        <div className="flex items-center justify-between gap-2">
+                          <h3 className="min-w-0 truncate text-sm font-medium text-slate-950">{conversation.title || 'Untitled conversation'}</h3>
+                          <span className="rounded-md border border-slate-200 bg-white px-2 py-0.5 text-[11px] font-medium uppercase text-slate-500">
                             {conversation.modeProfile}
                           </span>
                         </div>
-                        <p className="text-xs text-gray-500 mb-2 font-mono truncate">{conversation.deepseekSessionId || conversation.id}</p>
-                        <p className="text-sm text-gray-600 line-clamp-2 min-h-10">{conversation.lastMessagePreview || 'Waiting for first message...'}</p>
-                        <div className="flex items-center justify-between mt-3 text-xs text-gray-500">
+                        <p className="mt-1 truncate font-mono text-xs text-slate-500">{conversation.deepseekSessionId || conversation.id}</p>
+                        <p className="mt-2 line-clamp-2 min-h-9 text-sm text-slate-600">{conversation.lastMessagePreview || 'Waiting for first message...'}</p>
+                        <div className="mt-3 flex items-center justify-between text-xs text-slate-500">
                           <span>{conversation.messageCount} messages</span>
-                          <span>{new Date(conversation.updatedAt).toLocaleString()}</span>
+                          <span>{formatTime(conversation.updatedAt)}</span>
                         </div>
                       </button>
                     );
                   })}
                 </div>
               )}
-            </div>
+            </section>
 
-            <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
-              <div className="flex items-center justify-between gap-3 mb-4">
-                <div>
-                  <h2 className="text-xl font-semibold">Transcript</h2>
-                  <p className="text-sm text-gray-500">{activeConversation ? activeConversation.title || activeConversation.id : 'Select a conversation'}</p>
+            <section className="rounded-lg border border-slate-200 bg-white">
+              <div className="border-b border-slate-200 px-4 py-3">
+                <h2 className="text-sm font-semibold text-slate-950">Pending Approvals</h2>
+                <p className="text-xs text-slate-500">{pendingConfirms.length} open confirmation requests</p>
+              </div>
+
+              {pendingConfirms.length === 0 ? (
+                <div className="flex items-center gap-2 px-4 py-5 text-sm text-slate-500">
+                  <CheckCircle size={17} className="text-emerald-600" />
+                  No approvals waiting.
+                </div>
+              ) : (
+                <div className="space-y-3 p-3">
+                  {pendingConfirms.map((confirm) => {
+                    const isResponding = respondingConfirmId === confirm.confirmId;
+
+                    return (
+                      <div key={confirm.confirmId} className="rounded-lg border border-amber-200 bg-amber-50 p-3">
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <h3 className="break-words text-sm font-medium text-slate-950">{confirm.action}</h3>
+                            <p className="mt-1 truncate font-mono text-xs text-slate-600">{confirm.confirmId}</p>
+                          </div>
+                          <span className="rounded-md bg-rose-100 px-2 py-1 text-xs font-semibold uppercase text-rose-700">
+                            {confirm.riskLevel || 'unknown'}
+                          </span>
+                        </div>
+
+                        {confirm.params && (
+                          <pre className="mt-3 max-h-32 overflow-auto rounded-lg border border-amber-200 bg-white p-2 text-xs text-slate-700">
+                            {JSON.stringify(confirm.params, null, 2)}
+                          </pre>
+                        )}
+
+                        <div className="mt-3 flex items-center justify-between gap-2">
+                          <span className="text-xs text-slate-500">{formatTime(confirm.createdAt || confirm.timestamp)}</span>
+                          <div className="flex gap-2">
+                            <button
+                              type="button"
+                              onClick={() => handleConfirmResponse(confirm.confirmId, false)}
+                              disabled={isResponding}
+                              className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 transition hover:bg-slate-100 disabled:opacity-50"
+                            >
+                              Reject
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleConfirmResponse(confirm.confirmId, true)}
+                              disabled={isResponding}
+                              className="inline-flex items-center gap-2 rounded-lg bg-amber-600 px-3 py-1.5 text-sm font-medium text-white transition hover:bg-amber-700 disabled:opacity-50"
+                            >
+                              {isResponding && <Loader2 size={14} className="animate-spin" />}
+                              Approve
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </section>
+          </aside>
+
+          <section className="space-y-5">
+            <section className="rounded-lg border border-slate-200 bg-white">
+              <div className="flex flex-col gap-3 border-b border-slate-200 px-4 py-3 sm:flex-row sm:items-start sm:justify-between">
+                <div className="min-w-0">
+                  <h2 className="text-sm font-semibold text-slate-950">Transcript</h2>
+                  <p className="truncate text-xs text-slate-500">
+                    {activeConversation ? activeConversation.title || activeConversation.id : 'Select a conversation to inspect stored messages'}
+                  </p>
                 </div>
                 {activeConversation && (
-                  <span className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium rounded-full bg-gray-100 text-gray-600">
-                    <Link2 size={12} />
+                  <span className="inline-flex w-fit items-center gap-2 rounded-lg border border-sky-200 bg-sky-50 px-3 py-1.5 text-sm font-medium text-sky-700">
+                    <Link2 size={15} />
                     Bound
                   </span>
                 )}
               </div>
 
               {!activeConversation ? (
-                <p className="text-sm text-gray-500">Pick a conversation to inspect its stored transcript.</p>
+                <div className="px-4 py-16 text-center text-sm text-slate-500">Pick a conversation from the left panel.</div>
               ) : conversationMessages.length === 0 ? (
-                <p className="text-sm text-gray-500">Conversation has no synced messages yet.</p>
+                <div className="px-4 py-16 text-center text-sm text-slate-500">Conversation has no synced messages yet.</div>
               ) : (
-                <div className="space-y-3 max-h-[520px] overflow-y-auto pr-1">
+                <div className="max-h-[520px] space-y-3 overflow-y-auto p-4">
                   {conversationMessages.map((message) => (
-                    <div key={message.id} className={`rounded-xl border p-4 ${getMessageClassName(message.role)}`}>
-                      <div className="flex items-center justify-between gap-3 mb-2">
-                        <span className="text-xs font-semibold uppercase tracking-wide text-gray-600">{message.role}</span>
-                        <span className="text-xs text-gray-500">#{message.seq} · {new Date(message.createdAt).toLocaleString()}</span>
+                    <article
+                      key={message.id}
+                      className={`rounded-lg border p-4 ${messageStyles[message.role] || 'border-amber-200 bg-amber-50'}`}
+                    >
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <span className="text-xs font-semibold uppercase text-slate-600">{message.role}</span>
+                        <span className="text-xs text-slate-500">#{message.seq} / {formatDateTime(message.createdAt)}</span>
                       </div>
-                      <pre className="whitespace-pre-wrap break-words text-sm text-gray-800 font-sans">{message.content}</pre>
-                      <div className="mt-3 text-xs text-gray-500">source: {message.source}</div>
-                    </div>
+                      <pre className="mt-3 whitespace-pre-wrap break-words font-sans text-sm leading-6 text-slate-800">{message.content}</pre>
+                      <div className="mt-3 text-xs text-slate-500">source: {message.source}</div>
+                    </article>
                   ))}
                 </div>
               )}
-            </div>
-          </aside>
+            </section>
 
-          <section className="space-y-8">
-            <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
-              <div className="flex items-center justify-between gap-4 mb-4">
+            <section className="rounded-lg border border-slate-200 bg-white">
+              <div className="flex flex-col gap-3 border-b border-slate-200 px-4 py-3 sm:flex-row sm:items-start sm:justify-between">
                 <div>
-                  <h2 className="text-xl font-semibold">Add New Task</h2>
-                  <p className="text-sm text-gray-500">{activeConversation ? 'New tasks will append prompt and result into the active conversation.' : 'Submit a standalone task or bind it to a conversation from the left panel.'}</p>
+                  <h2 className="text-sm font-semibold text-slate-950">New Task</h2>
+                  <p className="text-xs text-slate-500">
+                    {activeConversation ? 'The prompt will append to the active conversation.' : 'Submit a standalone task or bind a conversation first.'}
+                  </p>
                 </div>
                 {activeConversation && (
-                  <span className="inline-flex items-center gap-2 px-3 py-2 text-sm rounded-lg bg-blue-50 text-blue-700 border border-blue-200">
-                    <Link2 size={16} />
-                    {activeConversation.title || activeConversation.id}
+                  <span className="inline-flex max-w-full items-center gap-2 truncate rounded-lg border border-slate-200 bg-slate-50 px-3 py-1.5 text-sm text-slate-700">
+                    <MessageSquare size={15} />
+                    <span className="truncate">{activeConversation.title || activeConversation.id}</span>
                   </span>
                 )}
               </div>
 
-              <form onSubmit={handleSubmit} className="flex flex-col gap-4">
-                <div className="border border-gray-200 rounded-lg overflow-hidden h-32 focus-within:ring-2 focus-within:ring-blue-500 transition-shadow">
+              <form onSubmit={handleSubmit} className="space-y-4 p-4">
+                <div className="h-36 overflow-hidden rounded-lg border border-slate-300 bg-white focus-within:ring-2 focus-within:ring-sky-500">
                   <Editor
                     height="100%"
                     defaultLanguage="markdown"
@@ -645,7 +752,7 @@ const [isConnected, setIsConnected] = useState(false);
                       scrollBeyondLastLine: false,
                       wordWrap: 'on',
                       padding: { top: 12, bottom: 12 },
-                      fontSize: 14
+                      fontSize: 14,
                     }}
                   />
                 </div>
@@ -653,195 +760,192 @@ const [isConnected, setIsConnected] = useState(false);
                   <button
                     type="submit"
                     disabled={!prompt.trim()}
-                    className="px-6 py-2 bg-blue-600 text-white font-medium rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 transition-colors"
+                    className="inline-flex items-center gap-2 rounded-lg bg-slate-950 px-4 py-2 text-sm font-medium text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
                   >
-                    <Plus size={20} />
+                    <Plus size={17} />
                     Add Task
                   </button>
                 </div>
               </form>
-            </div>
+            </section>
+          </section>
 
-            <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
-              <div className="flex items-start justify-between gap-4 mb-4">
+          <aside className="space-y-5">
+            <section className="rounded-lg border border-slate-200 bg-white">
+              <div className="flex items-start justify-between gap-3 border-b border-slate-200 px-4 py-3">
                 <div>
-                  <h2 className="text-xl font-semibold">API Tester</h2>
-                  <p className="text-sm text-gray-500">Call the queue server directly from the `5173` console and inspect the raw response.</p>
+                  <h2 className="text-sm font-semibold text-slate-950">API Tester</h2>
+                  <p className="text-xs text-slate-500">Direct queue-server request runner</p>
                 </div>
-                <div className="text-xs text-gray-500 rounded-lg bg-gray-50 border border-gray-200 px-3 py-2">
-                  Target: {queuePort ? `127.0.0.1:${queuePort}` : 'auto-detect'}
+                <div className="rounded-lg border border-slate-200 bg-slate-50 px-2 py-1 text-xs text-slate-500">
+                  {queuePort ? `127.0.0.1:${queuePort}` : 'auto'}
                 </div>
               </div>
 
-              <div className="flex flex-wrap gap-2 mb-4">
-                {API_TEST_PRESETS.map((preset) => (
-                  <button
-                    key={preset.label}
-                    type="button"
-                    onClick={() => handleApiPreset(preset)}
-                    className="px-3 py-1.5 text-sm font-medium text-gray-700 bg-gray-50 hover:bg-gray-100 rounded-lg border border-gray-200 transition-colors"
-                  >
-                    {preset.label}
-                  </button>
-                ))}
-              </div>
-
-              <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] gap-6">
-                <div className="space-y-4">
-                  <div className="flex gap-3">
-                    <select
-                      value={apiTestMethod}
-                      onChange={(event) => setApiTestMethod(event.target.value)}
-                      className="w-32 rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm font-medium text-gray-900"
-                    >
-                      {['GET', 'POST', 'PUT', 'PATCH', 'DELETE'].map((method) => (
-                        <option key={method} value={method}>{method}</option>
-                      ))}
-                    </select>
-                    <input
-                      value={apiTestPath}
-                      onChange={(event) => setApiTestPath(event.target.value)}
-                      placeholder="/health"
-                      className="flex-1 rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-900 font-mono"
-                    />
-                  </div>
-
-                  <label className="block">
-                    <span className="mb-2 block text-sm font-medium text-gray-700">Headers JSON</span>
-                    <textarea
-                      value={apiTestHeaders}
-                      onChange={(event) => setApiTestHeaders(event.target.value)}
-                      spellCheck={false}
-                      className="h-32 w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-900 font-mono"
-                    />
-                  </label>
-
-                  <label className="block">
-                    <span className="mb-2 block text-sm font-medium text-gray-700">Request Body</span>
-                    <textarea
-                      value={apiTestBody}
-                      onChange={(event) => setApiTestBody(event.target.value)}
-                      spellCheck={false}
-                      className="h-48 w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-900 font-mono"
-                    />
-                  </label>
-
-                  <div className="flex items-center justify-between gap-4">
-                    {apiTestError ? (
-                      <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
-                        {apiTestError}
-                      </div>
-                    ) : (
-                      <div className="text-sm text-gray-500">Responses are shown exactly as returned by the queue server.</div>
-                    )}
+              <div className="space-y-4 p-4">
+                <div className="grid grid-cols-2 gap-2">
+                  {API_TEST_PRESETS.map((preset) => (
                     <button
+                      key={preset.label}
                       type="button"
-                      onClick={() => handleRunApiTest().catch((err) => console.error('Failed to run API test:', err))}
-                      disabled={isApiTesting}
-                      className="px-5 py-2 bg-slate-900 text-white font-medium rounded-lg hover:bg-slate-800 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                      onClick={() => handleApiPreset(preset)}
+                      className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-100"
                     >
-                      {isApiTesting ? 'Running...' : 'Send Request'}
+                      {preset.label}
                     </button>
-                  </div>
+                  ))}
                 </div>
 
-                <div className="rounded-xl border border-gray-200 bg-gray-50 p-4 min-h-[28rem]">
-                  <div className="flex items-center justify-between gap-3 mb-3">
+                <div className="flex gap-2">
+                  <select
+                    value={apiTestMethod}
+                    onChange={(event) => setApiTestMethod(event.target.value)}
+                    className="w-28 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-900"
+                  >
+                    {methodOptions.map((method) => (
+                      <option key={method} value={method}>{method}</option>
+                    ))}
+                  </select>
+                  <input
+                    value={apiTestPath}
+                    onChange={(event) => setApiTestPath(event.target.value)}
+                    placeholder="/health"
+                    className="min-w-0 flex-1 rounded-lg border border-slate-300 bg-white px-3 py-2 font-mono text-sm text-slate-900"
+                  />
+                </div>
+
+                <label className="block">
+                  <span className="mb-1.5 block text-xs font-medium uppercase text-slate-500">Headers JSON</span>
+                  <textarea
+                    value={apiTestHeaders}
+                    onChange={(event) => setApiTestHeaders(event.target.value)}
+                    spellCheck={false}
+                    className="h-24 w-full resize-y rounded-lg border border-slate-300 bg-slate-50 px-3 py-2 font-mono text-sm text-slate-900"
+                  />
+                </label>
+
+                <label className="block">
+                  <span className="mb-1.5 block text-xs font-medium uppercase text-slate-500">Request Body</span>
+                  <textarea
+                    value={apiTestBody}
+                    onChange={(event) => setApiTestBody(event.target.value)}
+                    spellCheck={false}
+                    className="h-28 w-full resize-y rounded-lg border border-slate-300 bg-slate-50 px-3 py-2 font-mono text-sm text-slate-900"
+                  />
+                </label>
+
+                {apiTestError && (
+                  <div className="flex items-start gap-2 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
+                    <AlertTriangle size={16} className="mt-0.5 shrink-0" />
+                    <span>{apiTestError}</span>
+                  </div>
+                )}
+
+                <button
+                  type="button"
+                  onClick={() => handleRunApiTest().catch((err) => console.error('Failed to run API test:', err))}
+                  disabled={isApiTesting}
+                  className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-slate-950 px-4 py-2 text-sm font-medium text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {isApiTesting ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} />}
+                  {isApiTesting ? 'Running' : 'Send Request'}
+                </button>
+
+                <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                  <div className="flex items-center justify-between gap-3">
                     <div>
-                      <h3 className="font-medium text-gray-900">Response</h3>
-                      <p className="text-sm text-gray-500">Status, headers, and body preview.</p>
+                      <h3 className="text-sm font-medium text-slate-950">Response</h3>
+                      <p className="text-xs text-slate-500">Status, headers, and body</p>
                     </div>
                     {apiTestResult && (
-                      <span className={`px-3 py-1 rounded-full text-xs font-medium ${apiTestResult.status >= 200 && apiTestResult.status < 300 ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
-                        {apiTestResult.status} {apiTestResult.statusText || ''}
+                      <span className={`rounded-md px-2 py-1 text-xs font-semibold ${
+                        apiTestResult.status >= 200 && apiTestResult.status < 300
+                          ? 'bg-emerald-100 text-emerald-700'
+                          : 'bg-rose-100 text-rose-700'
+                      }`}
+                      >
+                        {apiTestResult.status}
                       </span>
                     )}
                   </div>
 
                   {!apiTestResult ? (
-                    <div className="h-full flex items-center justify-center text-sm text-gray-500">
-                      Run a request to inspect the queue server response.
-                    </div>
+                    <div className="py-10 text-center text-sm text-slate-500">Run a request to inspect a response.</div>
                   ) : (
-                    <div className="space-y-4">
-                      <div className="grid grid-cols-2 gap-3 text-sm">
-                        <div className="rounded-lg border border-gray-200 bg-white px-3 py-2">
-                          <div className="text-xs uppercase tracking-wide text-gray-500">Duration</div>
-                          <div className="mt-1 font-medium text-gray-900">{apiTestResult.durationMs} ms</div>
+                    <div className="mt-3 space-y-3">
+                      <div className="grid grid-cols-2 gap-2 text-sm">
+                        <div className="rounded-lg border border-slate-200 bg-white px-3 py-2">
+                          <div className="text-xs uppercase text-slate-500">Duration</div>
+                          <div className="font-medium text-slate-950">{apiTestResult.durationMs} ms</div>
                         </div>
-                        <div className="rounded-lg border border-gray-200 bg-white px-3 py-2">
-                          <div className="text-xs uppercase tracking-wide text-gray-500">Headers</div>
-                          <div className="mt-1 font-medium text-gray-900">{Object.keys(apiTestResult.headers).length}</div>
+                        <div className="rounded-lg border border-slate-200 bg-white px-3 py-2">
+                          <div className="text-xs uppercase text-slate-500">Headers</div>
+                          <div className="font-medium text-slate-950">{Object.keys(apiTestResult.headers).length}</div>
                         </div>
                       </div>
-
-                      <div>
-                        <div className="mb-2 text-sm font-medium text-gray-700">Response Headers</div>
-                        <pre className="max-h-40 overflow-auto rounded-lg border border-gray-200 bg-white p-3 text-xs text-gray-700 font-mono whitespace-pre-wrap break-all">{formatApiPayload(apiTestResult.headers)}</pre>
-                      </div>
-
-                      <div>
-                        <div className="mb-2 text-sm font-medium text-gray-700">Response Body</div>
-                        <pre className="max-h-[28rem] overflow-auto rounded-lg border border-gray-200 bg-white p-3 text-xs text-gray-800 font-mono whitespace-pre-wrap break-all">{apiTestResult.body || '(empty response body)'}</pre>
-                      </div>
+                      <pre className="max-h-36 overflow-auto rounded-lg border border-slate-200 bg-white p-3 text-xs text-slate-700 whitespace-pre-wrap break-all">
+                        {formatApiPayload(apiTestResult.headers)}
+                      </pre>
+                      <pre className="max-h-56 overflow-auto rounded-lg border border-slate-200 bg-white p-3 text-xs text-slate-800 whitespace-pre-wrap break-all">
+                        {apiTestResult.body || '(empty response body)'}
+                      </pre>
                     </div>
                   )}
                 </div>
               </div>
-            </div>
-
-            <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
-              <h2 className="text-xl font-semibold mb-4">Task Queue</h2>
-              {tasks.length === 0 ? (
-                <p className="text-gray-500 text-center py-8">No tasks in queue. Add one above!</p>
-              ) : (
-                <div className="space-y-4">
-                  {[...tasks]
-                    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
-                    .map((task) => (
-                      <div key={task.id} className="border border-gray-100 rounded-lg p-4 hover:bg-gray-50 transition-colors">
-                        <div className="flex items-start justify-between gap-4">
-                          <div className="flex items-start gap-4 min-w-0">
-                            <div className="mt-0.5">{getStatusIcon(task.status)}</div>
-                            <div className="min-w-0">
-                              <h3 className="font-medium text-gray-900 break-words">{task.prompt}</h3>
-                              <p className="text-sm text-gray-500 font-mono">ID: {task.id}</p>
-                              {task.options?.conversationId && (
-                                <p className="text-sm text-blue-600 font-mono">Conversation: {task.options.conversationId}</p>
-                              )}
-                            </div>
-                          </div>
-                          <div className="flex items-center gap-4 text-sm whitespace-nowrap">
-                            <span
-                              className={`px-3 py-1 rounded-full font-medium ${
-                                task.status === 'completed'
-                                  ? 'bg-green-100 text-green-700'
-                                  : task.status === 'processing'
-                                    ? 'bg-blue-100 text-blue-700'
-                                    : task.status === 'failed'
-                                      ? 'bg-red-100 text-red-700'
-                                      : 'bg-gray-100 text-gray-700'
-                              }`}
-                            >
-                              {task.status.toUpperCase()}
-                            </span>
-                            <span className="text-gray-400">{new Date(task.createdAt).toLocaleTimeString()}</span>
-                          </div>
-                        </div>
-
-                        {(task.result || task.error) && (
-                          <div className="mt-4 rounded-lg border border-gray-200 bg-gray-50 p-4 text-sm text-gray-700">
-                            <pre className="whitespace-pre-wrap break-words font-sans">{task.result || task.error}</pre>
-                          </div>
-                        )}
-                      </div>
-                    ))}
-                </div>
-              )}
-            </div>
-          </section>
+            </section>
+          </aside>
         </div>
-      </div>
+
+        <section className="rounded-lg border border-slate-200 bg-white">
+          <div className="flex flex-col gap-3 border-b border-slate-200 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <h2 className="text-sm font-semibold text-slate-950">Task Queue</h2>
+              <p className="text-xs text-slate-500">Newest tasks first, with result and error previews.</p>
+            </div>
+            <div className="flex flex-wrap gap-2 text-xs">
+              <span className="rounded-md border border-emerald-200 bg-emerald-50 px-2 py-1 font-medium text-emerald-700">{taskStats.completed} completed</span>
+              <span className="rounded-md border border-sky-200 bg-sky-50 px-2 py-1 font-medium text-sky-700">{taskStats.processing} processing</span>
+              <span className="rounded-md border border-rose-200 bg-rose-50 px-2 py-1 font-medium text-rose-700">{taskStats.failed} failed</span>
+            </div>
+          </div>
+
+          {sortedTasks.length === 0 ? (
+            <div className="px-4 py-12 text-center text-sm text-slate-500">No tasks in queue. Add one above.</div>
+          ) : (
+            <div className="divide-y divide-slate-200">
+              {sortedTasks.map((task) => (
+                <article key={task.id} className="p-4 transition hover:bg-slate-50">
+                  <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                    <div className="flex min-w-0 gap-3">
+                      <div className="mt-0.5">{getStatusIcon(task.status)}</div>
+                      <div className="min-w-0">
+                        <h3 className="break-words text-sm font-medium leading-6 text-slate-950">{task.prompt}</h3>
+                        <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 font-mono text-xs text-slate-500">
+                          <span>ID: {task.id}</span>
+                          {task.options?.conversationId && <span>Conversation: {task.options.conversationId}</span>}
+                        </div>
+                      </div>
+                    </div>
+                    <div className="flex shrink-0 items-center gap-3 text-sm">
+                      <span className={`rounded-md border px-2 py-1 text-xs font-semibold uppercase ${taskStatusStyles[task.status]}`}>
+                        {task.status}
+                      </span>
+                      <span className="text-slate-500">{formatTime(task.createdAt)}</span>
+                    </div>
+                  </div>
+
+                  {(task.result || task.error) && (
+                    <pre className="mt-4 max-h-64 overflow-auto rounded-lg border border-slate-200 bg-slate-50 p-3 whitespace-pre-wrap break-words font-sans text-sm leading-6 text-slate-700">
+                      {task.result || task.error}
+                    </pre>
+                  )}
+                </article>
+              ))}
+            </div>
+          )}
+        </section>
+      </main>
     </div>
   );
 }
