@@ -1,228 +1,162 @@
-# Tasks - free-chat-coder 优化计划
+# Tasks - free-chat-coder 代码审查修复
 
-> 生成日期：2026-04-25  
-> 优先级：高优先级任务（3-5 个）  
-> 核心目标：页面操作体验优化 + Patch Review 补丁模式
+> 生成日期：2026-04-27
+> 来源：code review of uncommitted changes
+> 核心目标：修复 review 发现的问题，按严重程度处理
 
 ---
 
-## Task 1: Patch 数据层实现
+## Bug 1: `setModelMode` 是空操作（CRITICAL）
 
-**优先级**：P0  
-**预估工时**：2-3 小时  
-**依赖**：无
+**严重程度**：Critical
+**文件**：`chromevideo/controllers/mode-controller.js:101-111`，`chromevideo/content.js:70-73`
+**预估工时**：1-2 小时
 
-### 任务描述
-实现 Patch Review 的数据层基础设施，包括数据库表和存储模块。
+### 问题描述
+`setModelMode` 移除了所有 DOM 操作——不再点击"深度思考"和"联网搜索"切换按钮，直接返回 `{ success: true }`。这意味着：
+- `deepthink_search_fallback` 路径会声称成功但实际不做任何 UI 切换
+- `prompt-controller.js` 中的 `window.ModeController.setModelMode(mode)` 调用也失效
+- 这个 fallback 路径存在的目的恰恰是当页面找不到 profile toggle 按钮时提供后备方案——现在它永远走 fallback 且没有实际效果
 
 ### 具体步骤
 
-- [ ] 1.1 在 `queue-server/storage/sqlite.js` 中新增 `patches` 和 `patch_events` 表
-  ```sql
-  CREATE TABLE patches (
-    id TEXT PRIMARY KEY,
-    task_id TEXT,
-    conversation_id TEXT,
-    status TEXT NOT NULL DEFAULT 'draft',
-    summary TEXT,
-    changes TEXT,  -- JSON 数组
-    risk_level TEXT DEFAULT 'medium',
-    source TEXT DEFAULT 'deepseek',
-    created_at TEXT,
-    updated_at TEXT
-  );
-
-  CREATE TABLE patch_events (
-    id TEXT PRIMARY KEY,
-    patch_id TEXT,
-    event TEXT,
-    actor TEXT,
-    timestamp TEXT,
-    details TEXT,
-    FOREIGN KEY (patch_id) REFERENCES patches(id)
-  );
-  ```
-
-- [ ] 1.2 创建 `queue-server/storage/patch-store.js`
-  - 实现 `createPatch(patchData)` - 创建 patch 提案
-  - 实现 `getPatches(filters)` - 查询 patch 列表
-  - 实现 `getPatch(patchId)` - 获取单个 patch
-  - 实现 `updatePatchStatus(patchId, status)` - 更新状态
-  - 实现 `validatePatch(patch)` - 验证安全性
-  - 实现 `applyPatch(patchId, workspacePath)` - 应用到文件系统
-
-- [ ] 1.3 创建 `queue-server/actions/diff-generator.js`
-  - 实现 `generateUnifiedDiff(oldContent, newContent, filePath)` - 生成 unified diff
-  - 实现 `parseUnifiedDiff(diffText)` - 解析为结构化数据
-  - 实现 `validateDiffPaths(diff, workspacePath)` - 路径安全校验
+- [ ] 1.1 恢复 `setModelMode` 中的 DOM 按钮点击逻辑
+- [ ] 1.2 确保深度思考/联网搜索按钮正确被 toggle
+- [ ] 1.3 验证 `deepthink_search_fallback` 路径确实切换了 UI 状态
+- [ ] 1.4 验证 direct `prompt-controller.js` 调用生效
 
 ### 验收标准
-- [ ] patch-store 模块能正确创建、读取、更新 patch 数据
-- [ ] diff-generator 能生成正确的 unified diff
-- [ ] 路径校验能阻止 workspace 外的文件修改
+- [ ] `setModelMode({ deepThink: true })` 确实点击了深度思考按钮
+- [ ] `setModelMode({ search: true })` 确实点击了联网搜索按钮
+- [ ] fallback 路径和 direct 调用都能正常工作
 
 ---
 
-## Task 2: Patch Parser 与 Custom Handler 集成
+## Bug 2: 重复的 `window.ModeController` 定义（HIGH）
 
-**优先级**：P0  
-**预估工时**：2-3 小时  
-**依赖**：Task 1
+**严重程度**：High
+**文件**：`chromevideo/controllers/mode-controller.js`，`chromevideo/content.js`
+**预估工时**：0.5-1 小时
 
-### 任务描述
-实现从 DeepSeek 回复中解析 patch 提案，并集成到 custom-handler 流程中。
+### 问题描述
+`manifest.json` 中 `mode-controller.js` 在 `content.js` 之前加载，但两个文件都完整定义了 `window.ModeController`。`content.js` 中的版本在运行时覆盖了 `mode-controller.js` 的版本。两者之间存在细微差异：
+- `mode-controller.js` 在 `_toggleState` 中保留了 `el.style.color` 检查（含 null-safety 保护）
+- `content.js` 完全去掉了 `style.color` 检查
+
+由于 `content.js` 最终生效，`style.color` 的 null-safety 修复成了死代码。
 
 ### 具体步骤
 
-- [ ] 2.1 创建 `queue-server/actions/patch-parser.js`
-  - 实现 `parsePatchProposal(replyText)` - 从 DeepSeek 回复解析 patch
-  - 实现 `hasPatchProposal(replyText)` - 检测是否包含 patch
-  - 实现 `extractFileModifications(replyText)` - 提取代码修改建议
-
-- [ ] 2.2 修改 `queue-server/custom-handler.js`
-  - 在 `processResult()` 中调用 `patch-parser` 检测 patch
-  - 如果检测到 patch，调用 `patch-store.createPatch()` 创建提案
-  - 更新任务状态为 `waiting_approval`
-  - 通过 WebSocket 广播 patch 提案事件
-
-- [ ] 2.3 修改 `queue-server/websocket/handler.js`
-  - 新增 patch 相关广播函数
-  - 广播 `patch_created`、`patch_updated` 事件
+- [ ] 2.1 选择其中一个文件保留 `ModeController` 定义
+- [ ] 2.2 删除另一个文件中的重复定义
+- [ ] 2.3 确保 `_toggleState` 保留 `style.color` 的 null-safety 检查
+- [ ] 2.4 验证 `manifest.json` 加载顺序正确
 
 ### 验收标准
-- [ ] DeepSeek 回复包含代码修改建议时，自动生成 patch 提案
-- [ ] patch 提案状态为 `draft`，等待验证
-- [ ] Web Console 能收到 patch 创建通知
+- [ ] 只有一个 `window.ModeController` 定义
+- [ ] `_toggleState` 包含 `style.color` null-safety 检查
 
 ---
 
-## Task 3: Patch Review REST API
+## Bug 3: `sendActionToTab` 绕过 content script 路由（MEDIUM）
 
-**优先级**：P0  
-**预估工时**：1-2 小时  
-**依赖**：Task 1
+**严重程度**：Medium
+**文件**：`chromevideo/background.js:157-186`，`chromevideo/content.js`
+**预估工时**：0.5-1 小时
 
-### 任务描述
-实现 Patch Review 的 REST API，供前端调用。
+### 问题描述
+`background.js` 中的代码在 `sendActionToTab` 中拦截 `setModeProfile`，改用 `chrome.tabs.executeScript` 而非 `chrome.tabs.sendMessage`。这意味着：
+- 请求永远不会到达 `content.js` 中的 `routeAction` switch
+- content script 中定义的 `ModeController` 对此 action 完全未被使用
+- 出现了两套 `setModeProfile` 实现路径
+
+虽然用 background injection 来解决 content-script-not-loaded 问题是一个合理的方案（见 `doc/mcp-usage.md`），但应该统一处理。
 
 ### 具体步骤
 
-- [ ] 3.1 创建 `queue-server/routes/patches.js`
-  - `GET /` - 获取 patch 列表
-  - `POST /` - 创建 patch（手动创建入口）
-  - `GET /:id` - 获取 patch 详情
-  - `POST /:id/validate` - 验证 patch 安全性
-  - `POST /:id/approve` - 批准 patch
-  - `POST /:id/reject` - 拒绝 patch
-  - `POST /:id/apply` - 应用 patch
-  - `GET /:id/diff` - 获取格式化 diff
-
-- [ ] 3.2 修改 `queue-server/index.js`
-  - 挂载 `/patches` 路由
+- [ ] 3.1 决定统一方案：全程用 injection 方式，还是修复 content script 加载问题
+- [ ] 3.2 如采用 injection 方案，删除 content script 中对应的死代码
+- [ ] 3.3 如修复加载问题，移除 background.js 中的 bypass
 
 ### 验收标准
-- [ ] 所有 API 端点正确响应
-- [ ] 批准后 patch 状态变为 `approved`，应用后变为 `applied`
-- [ ] 拒绝后 patch 状态变为 `rejected`
+- [ ] `setModeProfile` 只有一套实现路径
+- [ ] 不存在死代码路径
 
 ---
 
-## Task 4: Web Console Patch Review 面板
+## Bug 4: `chat-reader.js` 静默丢弃纯 think 消息（LOW）
 
-**优先级**：P1  
-**预估工时**：3-4 小时  
-**依赖**：Task 3
+**严重程度**：Low
+**文件**：`chromevideo/controllers/chat-reader.js:42-44`
+**预估工时**：0.5 小时
 
-### 任务描述
-在 Web Console 中实现 Patch Review 面板，展示 patch 列表和 diff 预览。
+### 问题描述
+当 `extractAssistantContent` 返回空的 `finalReply`（即整个消息被归类为 think 内容）时，消息通过 `continue` 被静默丢弃。旧行为会将其 include 到使用 `innerText` 的结果中。如果 DeepSeek 返回一条消息，其全部内容块都是 think 性质的（例如一段简短的仅推理回复），这条消息会从对话历史中丢失。
 
 ### 具体步骤
 
-- [ ] 4.1 创建 `web-console/src/components/DiffViewer.tsx`
-  - 实现 diff 可视化组件
-  - 支持行级别的新增/删除高亮
-  - 支持文件折叠/展开
-
-- [ ] 4.2 创建 `web-console/src/components/PatchReviewPanel.tsx`
-  - 实现 patch 列表组件
-  - 实现 patch 详情查看
-  - 实现 Approve/Reject 按钮
-
-- [ ] 4.3 修改 `web-console/src/App.tsx`
-  - 集成 `PatchReviewPanel` 组件
-  - 添加 WebSocket 监听 patch 事件
-  - 添加 patch 区域到侧边栏
+- [ ] 4.1 当 `finalReply` 为空时的处理策略：fallback 到 raw text 或记录 warning
+- [ ] 4.2 确保不会丢失对话轮次
 
 ### 验收标准
-- [ ] Web Console 显示 patch 列表
-- [ ] 点击 patch 显示 diff 预览
-- [ ] 能正确执行 approve/reject 操作
+- [ ] 纯 think 消息不会被静默丢弃
 
 ---
 
-## Task 5: Side Panel Patch 审批入口
+## Task 5: `.service-pids.json` 加入 `.gitignore`（NIT）
 
-**优先级**：P1  
-**预估工时**：2-3 小时  
-**依赖**：Task 4
+**严重程度**：Nit
+**文件**：`chromevideo/host/.service-pids.json`，`.gitignore`
+**预估工时**：5 分钟
 
-### 任务描述
-在 Chrome 扩展 Side Panel 中添加 patch 审批入口和状态展示。
+### 问题描述
+`chromevideo/host/.service-pids.json` 是一个运行时状态文件，包含特定于开发者机器的进程 ID 和时间戳。它被 git 追踪且频繁变更。
 
 ### 具体步骤
 
-- [ ] 5.1 创建 `chromevideo/sidepanel-patch.css`
-  - 定义 patch 审批相关样式
-
-- [ ] 5.2 修改 `chromevideo/sidepanel.html`
-  - 添加 patch 审批区域 UI
-
-- [ ] 5.3 修改 `chromevideo/sidepanel.js`
-  - 实现 patch 状态监听
-  - 实现 patch 审批交互
-  - 添加 WebSocket 或轮询获取 patch 更新
+- [ ] 5.1 在 `.gitignore` 中添加 `.service-pids.json`
+- [ ] 5.2 `git rm --cached chromevideo/host/.service-pids.json`
 
 ### 验收标准
-- [ ] Side Panel 能显示待审批的 patch
-- [ ] 能直接在 Side Panel 中查看 diff 和执行审批
-- [ ] 审批结果同步到 Web Console
+- [ ] `.service-pids.json` 不再被 git 追踪
 
 ---
 
-## 实现顺序
+## Task 6: `mode-controller.js` 缺少末尾换行符（NIT）
+
+**严重程度**：Nit
+**文件**：`chromevideo/controllers/mode-controller.js:112`
+**预估工时**：1 分钟
+
+### 具体步骤
+
+- [ ] 6.1 在文件末尾添加换行符
+
+### 验收标准
+- [ ] 文件以换行符结尾
+
+---
+
+## 修复顺序
 
 ```
-Task 1 (Patch 数据层)
+Bug 1 (setModelMode no-op)  ← 最高优先级
     ↓
-Task 3 (REST API)
+Bug 2 (重复定义)
     ↓
-Task 2 (Parser 集成) ← 可与 Task 3 并行
+Bug 3 (sendActionToTab bypass)
     ↓
-Task 4 (Web Console)
+Bug 4 (chat-reader 静默丢弃)
     ↓
-Task 5 (Side Panel)
+Task 5 (.gitignore)
+    ↓
+Task 6 (末尾换行符)
 ```
 
-## 文档参考
-
-详细技术方案请参考 `@implementation_plan.md`
+Bug 2 和 Bug 3 可以并行修复。
 
 ---
 
-## 附录：快捷命令
+## 附录：原始 Patch Review 任务（暂缓）
 
-```bash
-# 语法检查
-node -c queue-server/storage/sqlite.js
-node -c queue-server/storage/patch-store.js
-node -c queue-server/actions/patch-parser.js
-node -c queue-server/actions/diff-generator.js
-
-# Web Console 构建
-cd web-console && npm run build
-
-# 运行测试（后续实现）
-node queue-server/test-patch-parser.js
-node queue-server/test-diff-generator.js
-node queue-server/test-patch-store.js
-```
+原始 `tasks.md` 中的 Patch Review 数据层任务（Task 1-5）已暂缓，保留以供参考。详见 git 历史或 `doc/implementation_plan.md`。

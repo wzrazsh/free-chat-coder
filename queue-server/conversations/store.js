@@ -36,6 +36,7 @@ function normalizeMessage(message) {
     index: message.index,
     codeBlocks: message.codeBlocks,
     thinkContent: message.thinkContent,
+    messageType: message.messageType,
     isComplete: message.isComplete,
     sessionId: message.sessionId
   };

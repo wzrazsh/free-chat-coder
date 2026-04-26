@@ -76,7 +76,9 @@ window.PromptController = {
           
           hasStartedReplying = true;
           const lastBlock = messageBlocks[messageBlocks.length - 1];
-          const currentText = lastBlock.innerText || lastBlock.textContent;
+          // 使用 extractAssistantContent 只监控正式回答，排除思考区域
+          const extracted = window.DOMHelpers.extractAssistantContent(lastBlock);
+          const currentText = extracted.finalReply || lastBlock.innerText || lastBlock.textContent;
           
           const stopBtn = document.querySelector('div[class*="stop"]') || document.querySelector('button[class*="stop"]') || document.querySelector('[data-testid="stop-button"]');
           const isGenerating = !!stopBtn;

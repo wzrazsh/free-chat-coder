@@ -593,6 +593,32 @@ function addLogMessage(type, text, opts = {}) {
   }
 }
 
+/**
+ * 对可能混入思考文本的旧数据进行保守过滤
+ * 只清除以 "已思考"/"已深度思考"/"reasoning" 标题开头并包含折叠特征的内容块，
+ * 避免误伤正文中正常包含 "思考" 字样的段落。
+ */
+function _filterThinkFromOldContent(text) {
+  if (!text) return text;
+  // 匹配 "已思考（用时 x 秒）" 或 "已深度思考（用时 x 秒）" 及其后续内容
+  // 这些内容通常以独立段落/行为单位出现
+  const thinkHeaderPatterns = [
+    /^已思考（用时[\s\S]*?\n+/m,
+    /^已深度思考（用时[\s\S]*?\n+/m,
+    /^reasoning[\s\S]*?\n+/mi
+  ];
+  
+  let filtered = text;
+  for (const pattern of thinkHeaderPatterns) {
+    // 仅当这些模式出现在文本开头附近时才进行过滤
+    const match = filtered.match(pattern);
+    if (match && match.index !== undefined && match.index < 50) {
+      filtered = filtered.slice((match.index || 0) + match[0].length).trim();
+    }
+  }
+  return filtered || text; // 如果过滤后为空，保留原文
+}
+
 function renderAiMessage(payload) {
   const message = typeof payload === 'string'
     ? { content: payload, thinkContent: '' }
@@ -600,6 +626,11 @@ function renderAiMessage(payload) {
         content: payload?.content || '',
         thinkContent: payload?.thinkContent || ''
       };
+
+  // 旧数据兼容：如果 content 中仍混有思考文本，做保守过滤
+  if (!message.thinkContent && /已思考|已深度思考|reasoning/i.test(message.content.slice(0, 200))) {
+    message.content = _filterThinkFromOldContent(message.content);
+  }
 
   const sections = [];
   if (message.thinkContent.trim()) {

@@ -23,13 +23,26 @@ window.ChatReader = {
         continue;
       }
 
-      const content = node.innerText || node.textContent || '';
+      let content = node.innerText || node.textContent || '';
       if (!content.trim()) {
         continue;
       }
 
       const codeBlocks = [];
+      let thinkContent = '';
+      let messageType = '';
+
       if (isAI) {
+        // 使用 extractAssistantContent 分离思考内容和正式回答
+        const extracted = window.DOMHelpers.extractAssistantContent(node);
+        content = extracted.finalReply;
+        thinkContent = extracted.thinkContent;
+        messageType = 'final';
+
+        if (!content.trim()) {
+          continue;
+        }
+
         const pres = node.querySelectorAll('pre');
         pres.forEach((pre) => {
           const codeEl = pre.querySelector('code');
@@ -40,14 +53,6 @@ window.ChatReader = {
         });
       }
 
-      let thinkContent = '';
-      if (isAI) {
-        const prev = node.previousElementSibling;
-        if (prev && (prev.className.includes('think') || prev.className.includes('reasoning'))) {
-          thinkContent = prev.innerText || prev.textContent || '';
-        }
-      }
-
       messages.push({
         role: isAI ? 'assistant' : 'user',
         content,
@@ -55,7 +60,8 @@ window.ChatReader = {
         index: index++,
         contentHash: this._hashString(`${isAI ? 'assistant' : 'user'}\n${content}`),
         codeBlocks: codeBlocks.length > 0 ? codeBlocks : undefined,
-        thinkContent: thinkContent || undefined
+        thinkContent: thinkContent || undefined,
+        ...(messageType ? { messageType } : {})
       });
     }
 
@@ -86,7 +92,12 @@ window.ChatReader = {
     }
 
     const lastBlock = aiBlocks[aiBlocks.length - 1];
-    const content = lastBlock.innerText || lastBlock.textContent || '';
+
+    // 使用 extractAssistantContent 分离思考内容和正式回答
+    const extracted = window.DOMHelpers.extractAssistantContent(lastBlock);
+    let content = extracted.finalReply;
+    let thinkContent = includeThinkContent ? extracted.thinkContent : '';
+
     const codeBlocks = [];
     if (includeCodeBlocks) {
       const pres = lastBlock.querySelectorAll('pre');
@@ -97,14 +108,6 @@ window.ChatReader = {
           codeBlocks.push({ language, code: codeEl.innerText });
         }
       });
-    }
-
-    let thinkContent = '';
-    if (includeThinkContent) {
-      const prev = lastBlock.previousElementSibling;
-      if (prev && (prev.className.includes('think') || prev.className.includes('reasoning') || prev.querySelector('[class*="think"]'))) {
-        thinkContent = prev.innerText || prev.textContent || '';
-      }
     }
 
     const stopBtn = document.querySelector('div[class*="stop"], button[class*="stop"], [data-testid="stop-button"]');

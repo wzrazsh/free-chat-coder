@@ -1,14 +1,14 @@
 {
   "SOLOCoder-QueueServer": {
-    "pid": 8280,
+    "pid": 27708,
     "port": 8080,
-    "startedAt": "2026-04-26T05:41:15.580Z",
-    "listenerPid": 22752,
-    "updatedAt": "2026-04-26T05:41:21.749Z"
+    "startedAt": "2026-04-26T11:57:51.101Z",
+    "listenerPid": 28108,
+    "updatedAt": "2026-04-26T11:57:55.688Z"
   },
   "SOLOCoder-WebConsole": {
-    "pid": 25116,
+    "pid": 10288,
     "port": 5173,
-    "startedAt": "2026-04-26T05:41:20.994Z"
+    "startedAt": "2026-04-26T11:57:56.662Z"
   }
 }

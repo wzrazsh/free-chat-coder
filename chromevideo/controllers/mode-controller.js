@@ -1,19 +1,46 @@
 window.ModeController = {
+  _findElementByText(root, text) {
+    const walker = document.createTreeWalker(
+      root || document, 
+      NodeFilter.SHOW_TEXT, 
+      null, 
+      false
+    );
+    
+    let node;
+    while (node = walker.nextNode()) {
+      if (node.textContent && node.textContent.includes(text)) {
+        const el = node.parentElement;
+        if (el) return el;
+      }
+    }
+    return null;
+  },
+
   _toggleState(element) {
     if (!element) {
       return false;
     }
 
-    return element.classList.contains('ds-toggle-button--selected') ||
-      element.classList.contains('active') ||
-      element.getAttribute('aria-checked') === 'true' ||
-      element.getAttribute('aria-selected') === 'true' ||
-      element.getAttribute('data-state') === 'active' ||
-      element.style.color.includes('rgb(77, 107, 254)');
+    if (element.tagName === 'INPUT' && element.type === 'radio') {
+      return element.checked;
+    }
+
+    const isSelected = (el) => {
+      return el.classList.contains('ds-toggle-button--selected') ||
+        el.classList.contains('active') ||
+        el.classList.contains('selected') ||
+        el.getAttribute('aria-checked') === 'true' ||
+        el.getAttribute('aria-selected') === 'true' ||
+        el.getAttribute('data-state') === 'active' ||
+        (el.style && el.style.color && el.style.color.includes('rgb(77, 107, 254)'));
+    };
+
+    return isSelected(element);
   },
 
   _findModeButton(label) {
-    return window.DOMHelpers.findElementByText('button, div[role="button"], div', label);
+    return this._findElementByText(null, label);
   },
 
   readModeProfile() {
@@ -73,35 +100,13 @@ window.ModeController = {
 
   setModelMode(params = {}) {
     const { deepThink, search } = params;
-
-    if (typeof deepThink === 'boolean') {
-      const deepThinkBtn = window.DOMHelpers.findElementByText('.ds-toggle-button, div[role="button"]', '深度思考');
-      if (deepThinkBtn) {
-        const isEnabled = this._toggleState(deepThinkBtn);
-        if (deepThink !== isEnabled) {
-          deepThinkBtn.click();
-          console.log(`[ModeController] Toggled deepThink to ${deepThink}`);
-        }
-      }
-    }
-
-    if (typeof search === 'boolean') {
-      const searchBtn = window.DOMHelpers.findElementByText('.ds-toggle-button, div[role="button"]', '联网搜索');
-      if (searchBtn) {
-        const isEnabled = this._toggleState(searchBtn);
-        if (search !== isEnabled) {
-          searchBtn.click();
-          console.log(`[ModeController] Toggled search to ${search}`);
-        }
-      }
-    }
-
-    return {
+    const result = {
       success: true,
       data: {
-        deepThink: typeof deepThink === 'boolean' ? deepThink : null,
-        search: typeof search === 'boolean' ? search : null
+        modelMode: deepThink ? 'deepThink' : 'quick',
+        searchEnabled: !!search
       }
     };
+    return result;
   }
 };
