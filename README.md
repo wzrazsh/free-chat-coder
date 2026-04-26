@@ -1,4 +1,4 @@
-# free-chat-coder
+n'gng# free-chat-coder
 
 `free-chat-coder` 是一个围绕 **DeepSeek** 构建的本地 AI 辅助开发工具集。它把浏览器扩展、任务队列服务、Web 控制台和可选的 Web IDE 整合在一起，让你可以在本地调度 AI 任务、管理聊天会话，并在需要时进行人工确认。
 
@@ -189,6 +189,40 @@ node scripts/verify-deepseek-web-provider.js \
 ```bash
 curl http://127.0.0.1:8080/health
 ```
+
+---
+
+## MCP 工具使用
+
+> 本项目使用 Chrome DevTools MCP 工具进行浏览器自动化测试和开发调试。
+
+### 打开 DeepSeek + Side Panel
+
+1. **用 MCP 工具打开 DeepSeek**
+   - 使用 `cwCaAk0mcp0navigate_page` 工具导航到 `https://chat.deepseek.com/`
+
+2. **触发 Side Panel 打开**
+   - 在页面上点击任意位置（空白处、按钮、输入框等）
+   - `chromevideo/content-scripts/auto-open-sidepanel.js` 会检测到 click 事件并自动打开 Side Panel
+   - 使用 `cwCaAk0mcp0click` 工具点击页面元素
+
+### 常用 MCP 工具
+
+- `cwCaAk0mcp0navigate_page`: 导航到 URL
+- `cwCaAk0mcp0take_snapshot`: 获取页面快照
+- `cwCaAk0mcp0click`: 点击元素（需要元素的 uid）
+- `cwCaAk0mcp0fill`: 填写表单
+- `cwCaAk0mcp0type_text`: 输入文本
+- `cwCaAk0mcp0list_pages`: 列出所有打开的页面
+- `cwCaAk0mcp0select_page`: 选择页面
+
+### 注意事项
+
+1. **MCP 连接**：如果 MCP 工具报错 "No connection found"，需要用 MCP 工具重新打开 Chrome
+2. **Side Panel 触发**：Chrome Side Panel API 要求必须由用户交互触发，不能自动打开
+3. **元素定位**：使用 `take_snapshot` 获取页面元素及其 uid，然后用 uid 进行操作
+
+详细文档见 `doc/mcp-usage.md`。
 
 ---
 
