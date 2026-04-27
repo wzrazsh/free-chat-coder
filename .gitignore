@@ -38,3 +38,4 @@ test-results
 fix-plan/
 web-console/dist/
 .chrome-extension-profile
+.service-pids.json

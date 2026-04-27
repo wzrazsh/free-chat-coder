@@ -155,35 +155,6 @@ async function ensureDeepSeekTab(preferredTabId = null) {
 }
 
 async function sendActionToTab(tabId, action, params = {}) {
-  if (action === 'setModeProfile') {
-    const profile = params.profile || 'expert';
-    const modeSwitchCode = `
-      (function() {
-        const targetLabel = '${profile === 'quick' ? '快速模式' : '专家模式'}';
-        const walker = document.createTreeWalker(document, NodeFilter.SHOW_TEXT, null, false);
-        let targetButton = null;
-        while (walker.nextNode()) {
-          const node = walker.currentNode;
-          if (node.textContent && node.textContent.includes(targetLabel)) {
-            targetButton = node.parentElement;
-            break;
-          }
-        }
-        if (targetButton) {
-          targetButton.click();
-          return { success: true };
-        }
-        return { success: false, error: 'Button not found' };
-      })();
-    `;
-    try {
-      const results = await chrome.tabs.executeScript(tabId, { code: modeSwitchCode });
-      return results[0];
-    } catch (e) {
-      console.error('[ModeSwitch] Error:', e);
-      return { success: false, error: e.message };
-    }
-  }
   return chrome.tabs.sendMessage(tabId, {
     action,
     params,

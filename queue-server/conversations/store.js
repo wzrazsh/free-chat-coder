@@ -169,6 +169,13 @@ function createConversation({
   status = 'active',
   metadata = {}
 } = {}) {
+  if (deepseekSessionId) {
+    const existing = getConversationBySessionId(deepseekSessionId);
+    if (existing) {
+      return existing;
+    }
+  }
+
   const timestamp = nowIso();
   const id = createId('conv');
 

@@ -1,5 +1,5 @@
 window.ModeController = {
-  _findElementByText(root, text) {
+  _findElementByText(root, text, preferInteractive = false) {
     const walker = document.createTreeWalker(
       root || document, 
       NodeFilter.SHOW_TEXT, 
@@ -8,13 +8,47 @@ window.ModeController = {
     );
     
     let node;
+    let bestMatch = null;
+    let bestMatchInteractive = false;
     while (node = walker.nextNode()) {
       if (node.textContent && node.textContent.includes(text)) {
         const el = node.parentElement;
-        if (el) return el;
+        if (!el) continue;
+        const isExact = node.textContent.trim() === text;
+        if (preferInteractive) {
+          const interactive = this._findInteractiveAncestor(el);
+          if (interactive) {
+            if (isExact) return interactive;
+            if (!bestMatch || !bestMatchInteractive) {
+              bestMatch = interactive;
+              bestMatchInteractive = true;
+            }
+          }
+        } else {
+          if (isExact) return el;
+          if (!bestMatch) {
+            bestMatch = el;
+          }
+        }
       }
     }
-    return null;
+    return bestMatch;
+  },
+
+  _findInteractiveAncestor(el, maxLevels = 5) {
+    if (!el) return null;
+    let current = el;
+    for (let i = 0; i < maxLevels; i++) {
+      if (!current) return null;
+      if (current.getAttribute && current.getAttribute('role') === 'radio') return current;
+      if (current.classList && (current.classList.contains('ds-toggle-button') || current.classList.contains('ds-atom-button'))) return current;
+      current = current.parentElement;
+    }
+    return el;
+  },
+
+  _findToggleByText(text) {
+    return this._findElementByText(null, text, true);
   },
 
   _toggleState(element) {
@@ -40,7 +74,7 @@ window.ModeController = {
   },
 
   _findModeButton(label) {
-    return this._findElementByText(null, label);
+    return this._findToggleByText(label);
   },
 
   readModeProfile() {
@@ -100,13 +134,50 @@ window.ModeController = {
 
   setModelMode(params = {}) {
     const { deepThink, search } = params;
-    const result = {
-      success: true,
+    const results = {};
+
+    if (deepThink !== undefined) {
+      const deepThinkBtn = this._findToggleByText('深度思考');
+      if (deepThinkBtn) {
+        const isActive = this._toggleState(deepThinkBtn);
+        if (deepThink && !isActive) {
+          deepThinkBtn.click();
+        } else if (!deepThink && isActive) {
+          deepThinkBtn.click();
+        }
+        results.deepThink = { found: true, toggled: deepThink ? (!isActive) : isActive };
+      } else {
+        results.deepThink = { found: false };
+      }
+    }
+
+    if (search !== undefined) {
+      let searchBtn = this._findToggleByText('联网搜索');
+      if (!searchBtn) {
+        searchBtn = this._findToggleByText('智能搜索');
+      }
+      if (searchBtn) {
+        const isActive = this._toggleState(searchBtn);
+        if (search && !isActive) {
+          searchBtn.click();
+        } else if (!search && isActive) {
+          searchBtn.click();
+        }
+        results.search = { found: true, toggled: search ? (!isActive) : isActive };
+      } else {
+        results.search = { found: false };
+      }
+    }
+
+    const anyFound = (results.deepThink?.found || results.search?.found);
+    return {
+      success: anyFound ? true : false,
       data: {
         modelMode: deepThink ? 'deepThink' : 'quick',
-        searchEnabled: !!search
-      }
+        searchEnabled: !!search,
+        results
+      },
+      error: anyFound ? undefined : 'No toggle buttons found'
     };
-    return result;
   }
 };
