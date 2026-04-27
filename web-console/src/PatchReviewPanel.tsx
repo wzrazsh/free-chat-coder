@@ -12,7 +12,6 @@ import {
   AlertTriangle,
   Loader2,
   RefreshCcw,
-  Eye,
   Trash2,
   Shield,
 } from 'lucide-react';
@@ -75,7 +74,7 @@ interface PatchReviewPanelProps {
   onPatchCreated?: (patch: Patch) => void;
 }
 
-export function PatchReviewPanel({ onPatchCreated }: PatchReviewPanelProps) {
+export function PatchReviewPanel({ onPatchCreated: _onPatchCreated }: PatchReviewPanelProps) {
   const [patches, setPatches] = useState<Patch[]>([]);
   const [selectedPatch, setSelectedPatch] = useState<Patch | null>(null);
   const [patchDiff, setPatchDiff] = useState<PatchDiff | null>(null);
@@ -261,7 +260,6 @@ export function PatchReviewPanel({ onPatchCreated }: PatchReviewPanelProps) {
               {patches.map(patch => {
                 const StatusIcon = statusStyles[patch.status]?.icon || Clock;
                 const isSelected = selectedPatch?.id === patch.id;
-                const isPending = isProcessing === patch.id;
 
                 return (
                   <div
@@ -350,7 +348,7 @@ export function PatchReviewPanel({ onPatchCreated }: PatchReviewPanelProps) {
                     <button
                       type="button"
                       onClick={() => handleReject(selectedPatch.id)}
-                      disabled={isPending}
+                      disabled={isProcessing === selectedPatch.id}
                       className="flex-1 inline-flex items-center justify-center gap-2 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50 disabled:opacity-50"
                     >
                       <XCircle size={14} />
@@ -359,10 +357,10 @@ export function PatchReviewPanel({ onPatchCreated }: PatchReviewPanelProps) {
                     <button
                       type="button"
                       onClick={() => handleApprove(selectedPatch.id)}
-                      disabled={isPending}
+                      disabled={isProcessing === selectedPatch.id}
                       className="flex-1 inline-flex items-center justify-center gap-2 rounded-lg bg-emerald-600 px-3 py-2 text-sm font-medium text-white transition hover:bg-emerald-700 disabled:opacity-50"
                     >
-                      {isPending ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle size={14} />}
+                      {isProcessing === selectedPatch.id ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle size={14} />}
                       Approve
                     </button>
                   </div>
@@ -373,10 +371,10 @@ export function PatchReviewPanel({ onPatchCreated }: PatchReviewPanelProps) {
                     <button
                       type="button"
                       onClick={() => handleApply(selectedPatch.id)}
-                      disabled={isPending}
+                      disabled={isProcessing === selectedPatch.id}
                       className="flex-1 inline-flex items-center justify-center gap-2 rounded-lg bg-blue-600 px-3 py-2 text-sm font-medium text-white transition hover:bg-blue-700 disabled:opacity-50"
                     >
-                      {isPending ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle size={14} />}
+                      {isProcessing === selectedPatch.id ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle size={14} />}
                       Apply Patch
                     </button>
                   </div>

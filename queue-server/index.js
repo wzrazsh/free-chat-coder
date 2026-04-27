@@ -9,6 +9,8 @@ const { execFile } = require('child_process');
 const setupWebSocket = require('./websocket/handler');
 const taskRoutes = require('./routes/tasks');
 const conversationRoutes = require('./routes/conversations');
+const approvalRoutes = require('./routes/approval');
+const patchRoutes = require('./routes/patches');
 const sharedConfig = require('../shared/config');
 
 // 日志配置
@@ -72,6 +74,8 @@ app.get('/health', (req, res) => {
 // Setup RESTful routes
 app.use('/tasks', taskRoutes);
 app.use('/conversations', conversationRoutes);
+app.use('/approvals', approvalRoutes);
+app.use('/patches', patchRoutes);
 
 // Native Host installation endpoint
 app.post('/install-native-host', (req, res) => {

@@ -24,14 +24,6 @@ window.ChatReader = {
       }
 
       let content = node.innerText || node.textContent || '';
-if (!content.trim()) {
-          if (thinkContent.trim()) {
-            content = thinkContent;
-            messageType = 'think_only';
-          } else {
-            continue;
-          }
-        }
 
       const codeBlocks = [];
       let thinkContent = '';
@@ -45,7 +37,12 @@ if (!content.trim()) {
         messageType = 'final';
 
         if (!content.trim()) {
-          continue;
+          if (thinkContent.trim()) {
+            content = thinkContent;
+            messageType = 'think_only';
+          } else {
+            continue;
+          }
         }
 
         const pres = node.querySelectorAll('pre');

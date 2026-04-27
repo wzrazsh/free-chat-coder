@@ -2,6 +2,7 @@
 const fs = require('fs');
 const path = require('path');
 const providerRegistry = require('../providers');
+const { isValidTransition, isTerminal, formatBadTransitionError, TASK_STATUS } = require('../../shared/task-states');
 
 class QueueManager {
   constructor() {
@@ -67,11 +68,25 @@ class QueueManager {
       return null;
     }
     const task = this.tasks.get(id);
+
+    if (updates.status && updates.status !== task.status) {
+      if (!isValidTransition(task.status, updates.status)) {
+        const errorMsg = formatBadTransitionError(task.status, updates.status, id);
+        console.warn(`[QueueManager] ${errorMsg}`);
+        throw new Error(errorMsg);
+      }
+    }
+
     const updatedTask = {
       ...task,
       ...updates,
       updatedAt: new Date().toISOString()
     };
+
+    if (updates.status && isTerminal(updates.status)) {
+      this.pendingQueue = this.pendingQueue.filter(qid => qid !== id);
+    }
+
     this.tasks.set(id, updatedTask);
     this._saveTasks();
     return updatedTask;
@@ -82,9 +97,14 @@ class QueueManager {
       return null;
     }
 
+    const task = this.tasks.get(id);
+    if (!isValidTransition(task.status, TASK_STATUS.PENDING)) {
+      return null;
+    }
+
     const updatedTask = this.updateTask(id, {
       ...updates,
-      status: 'pending'
+      status: TASK_STATUS.PENDING
     });
 
     if (updatedTask && !this.pendingQueue.includes(id)) {

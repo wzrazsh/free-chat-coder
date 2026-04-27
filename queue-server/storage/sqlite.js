@@ -97,6 +97,21 @@ db.exec(`
     updated_at TEXT NOT NULL,
     FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE CASCADE
   );
+
+  CREATE TABLE IF NOT EXISTS approvals (
+    id TEXT PRIMARY KEY,
+    task_id TEXT NOT NULL,
+    action_type TEXT NOT NULL,
+    params_json TEXT NOT NULL,
+    risk_level TEXT NOT NULL DEFAULT 'medium',
+    status TEXT NOT NULL DEFAULT 'pending',
+    reason TEXT,
+    created_at TEXT NOT NULL,
+    resolved_at TEXT
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_approvals_task_id ON approvals(task_id);
+  CREATE INDEX IF NOT EXISTS idx_approvals_status ON approvals(status);
 `);
 
 module.exports = {

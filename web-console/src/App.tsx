@@ -3,6 +3,8 @@ import {
   Activity,
   AlertTriangle,
   CheckCircle,
+  ChevronDown,
+  ChevronRight,
   Clock,
   Link2,
   Loader2,
@@ -24,7 +26,7 @@ import heroAsset from './assets/hero.png';
 
 interface Task {
   id: string;
-  status: 'pending' | 'processing' | 'completed' | 'failed';
+  status: 'pending' | 'assigned' | 'running' | 'waiting_approval' | 'processing' | 'completed' | 'failed';
   prompt: string;
   result?: string;
   error?: string;
@@ -32,7 +34,9 @@ interface Task {
   updatedAt?: string;
   options?: {
     conversationId?: string;
+    provider?: string;
   };
+  executionChannel?: string;
 }
 
 interface PendingConfirm {
@@ -43,7 +47,7 @@ interface PendingConfirm {
   createdAt?: string;
   expiresAt?: string;
   timestamp?: string;
-  params?: unknown;
+  params?: Record<string, unknown>;
 }
 
 interface Conversation {
@@ -180,6 +184,9 @@ const upsertConversation = (conversationList: Conversation[], nextConversation: 
 
 const taskStatusStyles: Record<Task['status'], string> = {
   pending: 'border-slate-200 bg-slate-50 text-slate-700',
+  assigned: 'border-sky-300 bg-sky-50 text-sky-700',
+  running: 'border-sky-200 bg-sky-50 text-sky-700',
+  waiting_approval: 'border-amber-200 bg-amber-50 text-amber-700',
   processing: 'border-sky-200 bg-sky-50 text-sky-700',
   completed: 'border-emerald-200 bg-emerald-50 text-emerald-700',
   failed: 'border-rose-200 bg-rose-50 text-rose-700',
@@ -209,6 +216,19 @@ function App() {
   const [isApiTesting, setIsApiTesting] = useState(false);
   const wsRef = useRef<WebSocket | null>(null);
   const activeConversationIdRef = useRef('');
+  const [expandedTasks, setExpandedTasks] = useState<Set<string>>(new Set());
+
+  const toggleTaskExpand = (taskId: string) => {
+    setExpandedTasks((prev) => {
+      const next = new Set(prev);
+      if (next.has(taskId)) {
+        next.delete(taskId);
+      } else {
+        next.add(taskId);
+      }
+      return next;
+    });
+  };
 
   const sortedConversations = useMemo(() => {
     return [...conversations].sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
@@ -226,16 +246,19 @@ function App() {
     return tasks.reduce(
       (acc, task) => {
         acc.total += 1;
-        acc[task.status] += 1;
+        acc[task.status] = (acc[task.status] || 0) + 1;
         return acc;
       },
       {
         total: 0,
         pending: 0,
+        assigned: 0,
+        running: 0,
+        waiting_approval: 0,
         processing: 0,
         completed: 0,
         failed: 0,
-      },
+      } as Record<string, number>,
     );
   }, [tasks]);
 
@@ -498,7 +521,11 @@ function App() {
       case 'completed':
         return <CheckCircle className="text-emerald-600" size={18} />;
       case 'processing':
+      case 'running':
+      case 'assigned':
         return <Activity className="text-sky-600" size={18} />;
+      case 'waiting_approval':
+        return <AlertTriangle className="text-amber-600" size={18} />;
       case 'failed':
         return <XCircle className="text-rose-600" size={18} />;
       default:
@@ -916,7 +943,13 @@ function App() {
             <div className="divide-y divide-slate-200">
               {sortedTasks.map((task) => (
                 <article key={task.id} className="p-4 transition hover:bg-slate-50">
-                  <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                  <div
+                    className="flex cursor-pointer flex-col gap-3 lg:flex-row lg:items-start lg:justify-between"
+                    onClick={() => toggleTaskExpand(task.id)}
+                    role="button"
+                    tabIndex={0}
+                    onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleTaskExpand(task.id); } }}
+                  >
                     <div className="flex min-w-0 gap-3">
                       <div className="mt-0.5">{getStatusIcon(task.status)}</div>
                       <div className="min-w-0">
@@ -929,9 +962,12 @@ function App() {
                     </div>
                     <div className="flex shrink-0 items-center gap-3 text-sm">
                       <span className={`rounded-md border px-2 py-1 text-xs font-semibold uppercase ${taskStatusStyles[task.status]}`}>
-                        {task.status}
+                        {task.status.replace('_', ' ')}
                       </span>
                       <span className="text-slate-500">{formatTime(task.createdAt)}</span>
+                      <span className="text-slate-400">
+                        {expandedTasks.has(task.id) ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+                      </span>
                     </div>
                   </div>
 
@@ -939,6 +975,73 @@ function App() {
                     <pre className="mt-4 max-h-64 overflow-auto rounded-lg border border-slate-200 bg-slate-50 p-3 whitespace-pre-wrap break-words font-sans text-sm leading-6 text-slate-700">
                       {task.result || task.error}
                     </pre>
+                  )}
+
+                  {expandedTasks.has(task.id) && (
+                    <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 p-4">
+                      <div className="grid gap-4 sm:grid-cols-2">
+                        <div>
+                          <span className="text-xs font-medium uppercase text-slate-500">State Machine</span>
+                          <div className="mt-2 flex flex-wrap gap-1.5">
+                            {(['pending', 'assigned', 'running', 'waiting_approval', 'completed', 'failed'] as const).map((state) => {
+                              const isState = task.status === state;
+                              const isPast = ['completed', 'failed'].includes(task.status)
+                                ? ['pending', 'assigned', 'running'].includes(state) || (task.status === 'completed' && state !== 'failed') || (task.status === 'failed' && state === 'failed')
+                                : task.status === 'waiting_approval'
+                                  ? ['pending', 'assigned', 'running', 'waiting_approval'].includes(state)
+                                  : task.status === 'running'
+                                    ? ['pending', 'assigned', 'running'].includes(state)
+                                    : task.status === 'assigned'
+                                      ? ['pending', 'assigned'].includes(state)
+                                      : task.status === 'pending'
+                                        ? state === 'pending'
+                                        : false;
+                              return (
+                                <span
+                                  key={state}
+                                  className={`rounded-md border px-2 py-0.5 text-xs font-medium ${
+                                    isState
+                                      ? 'border-sky-300 bg-sky-100 text-sky-800'
+                                      : isPast
+                                        ? 'border-slate-200 bg-white text-slate-400'
+                                        : 'border-slate-100 bg-slate-50 text-slate-300'
+                                  }`}
+                                >
+                                  {state === 'waiting_approval' ? 'Awaiting' : state.charAt(0).toUpperCase() + state.slice(1)}
+                                </span>
+                              );
+                            })}
+                          </div>
+                        </div>
+                        <div>
+                          <span className="text-xs font-medium uppercase text-slate-500">Details</span>
+                          <div className="mt-2 space-y-1.5 text-sm text-slate-600">
+                            <div className="flex justify-between">
+                              <span className="text-slate-400">Created</span>
+                              <span>{new Date(task.createdAt).toLocaleString()}</span>
+                            </div>
+                            {task.updatedAt && (
+                              <div className="flex justify-between">
+                                <span className="text-slate-400">Updated</span>
+                                <span>{new Date(task.updatedAt).toLocaleString()}</span>
+                              </div>
+                            )}
+                            {task.options?.provider && (
+                              <div className="flex justify-between">
+                                <span className="text-slate-400">Provider</span>
+                                <span className="font-mono text-xs">{task.options.provider}</span>
+                              </div>
+                            )}
+                            {task.executionChannel && (
+                              <div className="flex justify-between">
+                                <span className="text-slate-400">Channel</span>
+                                <span className="font-mono text-xs">{task.executionChannel}</span>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
                   )}
                 </article>
               ))}
