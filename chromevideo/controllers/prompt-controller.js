@@ -1,6 +1,6 @@
 window.PromptController = {
   async submitPrompt(params) {
-    const { prompt, prependSystemInstruction = true, mode, attachments = [], typingSpeed = 'human', waitForReply = true } = params;
+    const { prompt, prependSystemInstruction = true, mode, typingSpeed = 'human', waitForReply = true } = params;
     
     // 1. 模式预设切换 (如果指定了 mode)
     if (mode && window.ModeController) {
@@ -8,13 +8,7 @@ window.PromptController = {
       await window.AntiDetection.delay(500);
     }
 
-    // 2. 附件上传 (如果指定了 attachments)
-    if (attachments && attachments.length > 0 && window.UploadController) {
-      for (const attachment of attachments) {
-        await window.UploadController.uploadAttachment(attachment);
-        await window.AntiDetection.delay(800);
-      }
-    }
+    // 2. 附件上传由 background.js 完成，PromptController 只负责提交 prompt
 
     // 3. 查找输入框
     const input = document.querySelector('#chat-input') || document.querySelector('textarea[placeholder*="message"]') || document.querySelector('textarea');
