@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "free-chat-coder": {
+      "command": "node",
+      "args": ["E:\\AIwork\\free-chat-coder\\queue-server\\mcp-server.js"],
+      "description": "MCP Server for free-chat-coder - Control DeepSeek via Chrome extension"
+    }
+  }
+}

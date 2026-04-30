@@ -5,6 +5,7 @@
   "main": "index.js",
   "scripts": {
     "dev": "nodemon index.js",
+    "start:mcp": "node mcp-server.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "nodemonConfig": {
@@ -17,10 +18,12 @@
   "license": "ISC",
   "type": "commonjs",
   "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0",
     "better-sqlite3": "^12.9.0",
     "cors": "^2.8.6",
     "express": "^5.2.1",
-    "ws": "^8.20.0"
+    "ws": "^8.20.0",
+    "zod": "^4.4.1"
   },
   "devDependencies": {
     "nodemon": "^3.1.14"
